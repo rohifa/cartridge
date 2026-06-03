@@ -8,6 +8,7 @@
   import ListView from '$lib/components/ListView.svelte';
   import GameDetail from '$lib/components/GameDetail.svelte';
   import Settings from '$lib/components/Settings.svelte';
+  import AddAccountModal from '$lib/components/AddAccountModal.svelte';
   import CreateListModal from '$lib/components/CreateListModal.svelte';
   import LaunchToast from '$lib/components/LaunchToast.svelte';
   import Icon from '$lib/components/Icon.svelte';
@@ -16,6 +17,7 @@
     patchGame as apiPatchGame,
     launchGame as apiLaunchGame,
     syncAccount as apiSyncAccount,
+    removeAccount as apiRemoveAccount,
     createList as apiCreateList,
     savePrefs as apiSavePrefs,
   } from '$lib/api.js';
@@ -23,7 +25,7 @@
   import { PLAT, ALLTAGS } from '$lib/constants.js';
   import type {
     Game, GameList, GamePatch, SidebarFilter, AppView,
-    Filters, Prefs, ListColor, ListKind, Account, CartridgeData,
+    Filters, Prefs, ListColor, ListKind, Account, CartridgeData, Platform,
   } from '$lib/types.js';
 
   type SortKey = 'title' | 'playtime' | 'recent' | 'rating' | 'metacritic' | 'opencritic' | 'userScore' | 'year';
@@ -62,7 +64,11 @@
   let syncingId         = $state<string | null>(null);
   let createOpen        = $state(false);
   let createFromFilters = $state(false);
+  let addAccountOpen    = $state(false);
+  let editingAccount    = $state<{ platform: Platform; steamId: string } | null>(null);
   let toast             = $state<{ title: string; platform: string } | null>(null);
+  let syncNotif         = $state<{ ok: boolean; message: string } | null>(null);
+  let syncNotifTimer    = 0;
 
   // ── Boot — load persisted state from Rust ─────────────────────────────────
   onMount(async () => {
@@ -207,16 +213,32 @@
     }
   }
 
+  function showSyncNotif(ok: boolean, message: string) {
+    clearTimeout(syncNotifTimer);
+    syncNotif = { ok, message };
+    syncNotifTimer = window.setTimeout(() => { syncNotif = null; }, 5000);
+  }
+
   async function syncOne(id: string) {
     if (syncingId) return;
     syncingId = id;
     try {
-      await apiSyncAccount(id);
+      const result = await apiSyncAccount(id);
       const d = await loadData();
       games    = d.games;
       accounts = d.accounts;
+      if (result.errors.length > 0) {
+        showSyncNotif(false, result.errors[0]);
+      } else if (result.added === 0 && result.updated === 0) {
+        showSyncNotif(false, 'No games found. In Steam, go to Edit Profile → Privacy Settings and set "Game details" to Public.');
+      } else {
+        const parts = [];
+        if (result.added > 0)   parts.push(`${result.added} new`);
+        if (result.updated > 0) parts.push(`${result.updated} updated`);
+        showSyncNotif(true, `Synced ${parts.join(', ')} game${result.added + result.updated === 1 ? '' : 's'}.`);
+      }
     } catch (e) {
-      console.error('syncOne failed:', e);
+      showSyncNotif(false, String(e));
     } finally {
       syncingId = null;
     }
@@ -270,6 +292,12 @@
         onSync={syncOne}
         onSetPref={setPref}
         onTheme={(t) => { theme = t; }}
+        onAddAccount={() => { addAccountOpen = true; }}
+        onEditAccount={(acc) => { editingAccount = { platform: acc.platform, steamId: acc.id }; }}
+        onRemoveAccount={async (id) => {
+          await apiRemoveAccount(id);
+          accounts = accounts.filter(a => a.id !== id);
+        }}
       />
 
     {:else if selected}
@@ -301,18 +329,6 @@
       />
 
       <div class="content-area">
-        {#if filtersOpen}
-          <FilterPanel
-            {data}
-            {filters}
-            {yearBounds}
-            activeCount={activeFilterCount}
-            onSetFilters={(updater) => { filters = updater(filters); }}
-            onClear={clearFilters}
-            onSaveSmart={() => { createFromFilters = true; createOpen = true; }}
-          />
-        {/if}
-
         <div class="library-col">
           <AggBar games={filtered} listMeta={activeList} />
           <div class="scroll-area">
@@ -343,10 +359,35 @@
             {/if}
           </div>
         </div>
+
+        {#if filtersOpen}
+          <FilterPanel
+            {data}
+            {filters}
+            {yearBounds}
+            activeCount={activeFilterCount}
+            onSetFilters={(updater) => { filters = updater(filters); }}
+            onClear={clearFilters}
+            onSaveSmart={() => { createFromFilters = true; createOpen = true; }}
+          />
+        {/if}
       </div>
     {/if}
   </main>
 </div>
+
+{#if addAccountOpen || editingAccount}
+  <AddAccountModal
+    editAccount={editingAccount}
+    onClose={() => { addAccountOpen = false; editingAccount = null; }}
+    onAdd={(account) => {
+      accounts = [...accounts.filter(a => a.id !== account.id), account];
+      addAccountOpen = false;
+      editingAccount = null;
+      syncOne(account.id);
+    }}
+  />
+{/if}
 
 {#if createOpen}
   <CreateListModal
@@ -358,6 +399,13 @@
 {/if}
 
 <LaunchToast {toast} onDismiss={() => { toast = null; }} />
+
+{#if syncNotif}
+  <div class="sync-notif" class:notif-ok={syncNotif.ok} class:notif-err={!syncNotif.ok}>
+    <Icon name={syncNotif.ok ? 'check-circle' : 'alert-circle'} size={14} color={syncNotif.ok ? 'var(--ok)' : 'var(--danger)'} />
+    {syncNotif.message}
+  </div>
+{/if}
 
 <style>
   .app {
@@ -421,4 +469,26 @@
     margin: 0;
     color: var(--fg-3);
   }
+
+  .sync-notif {
+    position: fixed;
+    bottom: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 80;
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    max-width: 420px;
+    padding: 11px 16px;
+    border-radius: var(--radius-md);
+    background: var(--bg-2);
+    border: 1px solid var(--border-2);
+    box-shadow: var(--shadow-lg);
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+
+  .notif-ok  { color: var(--fg-1); }
+  .notif-err { color: var(--danger); }
 </style>

@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
   import { PLAT } from '$lib/constants.js';
-  import type { CartridgeData, Prefs } from '$lib/types.js';
+  import type { Account, CartridgeData, Prefs } from '$lib/types.js';
 
   let {
     data,
@@ -11,6 +11,9 @@
     onSync,
     onSetPref,
     onTheme,
+    onAddAccount,
+    onEditAccount,
+    onRemoveAccount,
   }: {
     data: CartridgeData;
     syncingId: string | null;
@@ -19,6 +22,9 @@
     onSync: (id: string) => void;
     onSetPref: <K extends keyof Prefs>(key: K, val: Prefs[K]) => void;
     onTheme: (t: 'dark' | 'light') => void;
+    onAddAccount: () => void;
+    onEditAccount: (account: Account) => void;
+    onRemoveAccount: (id: string) => void;
   } = $props();
 </script>
 
@@ -106,12 +112,13 @@
               </span>
               {syncing ? 'Syncing…' : 'Sync now'}
             </button>
-            <button class="remove-btn">Remove</button>
+            <button class="edit-btn" onclick={() => onEditAccount(account)}>Edit</button>
+            <button class="remove-btn" onclick={() => onRemoveAccount(account.id)}>Remove</button>
           </div>
         </div>
       {/each}
 
-      <button class="add-account-btn">
+      <button class="add-account-btn" onclick={onAddAccount}>
         <Icon name="plus" size={16} color="var(--fg-2)" />
         Add an account
       </button>
@@ -425,6 +432,18 @@
   .sync-btn:disabled {
     cursor: default;
     opacity: 0.7;
+  }
+
+  .edit-btn {
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-2);
+    background: transparent;
+    color: var(--fg-2);
+    font-family: var(--font-ui);
+    font-size: 12px;
+    cursor: pointer;
   }
 
   .remove-btn {

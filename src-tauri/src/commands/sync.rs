@@ -72,6 +72,8 @@ pub async fn add_steam_account(
     state: Db<'_>,
     api_key: String,
     steam_id: String,
+    // When editing, the caller passes the old ID so it can be removed if it changed.
+    prev_id: Option<String>,
 ) -> Result<Account, String> {
     let url = format!(
         "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/\
@@ -93,25 +95,40 @@ pub async fn add_steam_account(
         .next()
         .ok_or("Steam account not found — check your Steam ID")?;
 
-    let account = Account {
-        id: steam_id.clone(),
-        name: "Steam".into(),
-        handle: player.personaname,
-        platform: Platform::Steam,
-        count: 0,
-        synced: "never".into(),
-        status: AccountStatus::Ok,
-        api_key: Some(api_key),
+    let mut store = state.lock().unwrap();
+
+    // Remove the old account if the Steam ID changed during an edit.
+    if let Some(ref old_id) = prev_id {
+        if old_id != &steam_id {
+            store.data.accounts.retain(|a| &a.id != old_id);
+        }
+    }
+
+    let result = match store.data.accounts.iter_mut().find(|a| a.id == steam_id) {
+        Some(existing) => {
+            // Update only credential/identity fields; preserve sync history.
+            existing.handle  = player.personaname;
+            existing.api_key = Some(api_key);
+            Account { api_key: None, ..existing.clone() }
+        }
+        None => {
+            let account = Account {
+                id: steam_id.clone(),
+                name: "Steam".into(),
+                handle: player.personaname,
+                platform: Platform::Steam,
+                count: 0,
+                synced: "never".into(),
+                status: AccountStatus::Ok,
+                api_key: Some(api_key),
+            };
+            store.data.accounts.push(account.clone());
+            Account { api_key: None, ..account }
+        }
     };
 
-    let mut store = state.lock().unwrap();
-    match store.data.accounts.iter_mut().find(|a| a.id == steam_id) {
-        Some(existing) => *existing = account.clone(),
-        None => store.data.accounts.push(account.clone()),
-    }
     store.save().map_err(|e| e.to_string())?;
-
-    Ok(Account { api_key: None, ..account })
+    Ok(result)
 }
 
 #[tauri::command]

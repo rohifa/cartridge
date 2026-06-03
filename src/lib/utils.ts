@@ -26,8 +26,8 @@ export function matchFilters(g: Game, f: Partial<Filters> | null | undefined): b
   if (f.genres?.length    && !f.genres.some(x => g.genre.includes(x)))              return false;
   if (f.platforms?.length && !f.platforms.includes(g.platform))                     return false;
   if (f.statuses?.length  && !f.statuses.includes(g.status))                        return false;
-  if (f.yearLo != null    && g.year < f.yearLo)                                     return false;
-  if (f.yearHi != null    && g.year > f.yearHi)                                     return false;
+  if (f.yearLo != null    && g.year > 0 && g.year < f.yearLo)                       return false;
+  if (f.yearHi != null    && g.year > 0 && g.year > f.yearHi)                       return false;
   if (f.mcMin  && (g.metacritic == null  || g.metacritic  < f.mcMin))               return false;
   if (f.ocMin  && (g.opencritic == null  || g.opencritic  < f.ocMin))               return false;
   if (f.usrMin && (g.userScore  == null  || g.userScore   < f.usrMin))              return false;
