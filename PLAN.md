@@ -105,8 +105,8 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 
 ---
 
-## Section 9 — Main App
-- [ ] Rewrite `src/routes/+page.svelte` — all app-level state and logic:
+## Section 9 — Main App ✅
+- [x] Rewrite `src/routes/+page.svelte` — all app-level state and logic:
   - State: `games`, `lists`, `view`, `filter` (sidebar scope), `filters` (deep panel), `filtersOpen`, `theme`, `prefs`, `viewMode`, `sort`, `query`, `selectedId`, `syncing`, `syncingId`, `createOpen`, `toast`
   - Derived: `filtered` (applies sidebar scope + deep filters + search + sort), `activeFilterCount`, `yearBounds`
   - Handlers: `patch()`, `addTag()`, `launch()`, `syncAll()`, `syncOne()`, `createList()`, `clearFilters()`
@@ -128,26 +128,26 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 
 > Establishes the in-memory store, file persistence, and Rust mirrors of the TypeScript types. All subsequent command modules depend on this.
 
-- [ ] **Cargo dependencies** — add to `src-tauri/Cargo.toml`:
+- [x] **Cargo dependencies** — add to `src-tauri/Cargo.toml`:
   - `tokio = { version = "1", features = ["full"] }` — async runtime for HTTP calls
   - `reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }` — HTTP client for platform APIs and cover art downloads
   - `dirs = "5"` — resolves `~/Library/Application Support/…`
   - `anyhow = "1"` — ergonomic error propagation; errors mapped to `String` at the JS boundary
-- [ ] **`src-tauri/src/models.rs`** — Rust structs mirroring `types.ts`, all `serde::{Serialize, Deserialize}`:
+- [x] **`src-tauri/src/models.rs`** — Rust structs mirroring `types.ts`, all `serde::{Serialize, Deserialize}`:
   - `Platform`, `GameStatus`, `ListColor`, `ListKind` enums
   - `Game` struct — all existing fields; add `app_id: Option<String>` (platform-native ID needed for launch deep links)
   - `GamePatch` struct — every `Game` field wrapped in `Option<T>` for partial updates without clobbering user data
   - `Account` struct — add `api_key: Option<String>` (stored in the JSON file, never returned to the frontend)
   - `GameList`, `Filters`, `Prefs`, `CartridgeData` structs
   - `SyncResult` struct: `{ added: u32, updated: u32, errors: Vec<String> }`
-- [ ] **`src-tauri/src/store.rs`** — `AppStore` managed as `Mutex<AppStore>` via `app.manage()`:
+- [x] **`src-tauri/src/store.rs`** — `AppStore` managed as `Mutex<AppStore>` via `app.manage()`:
   - `data: CartridgeData` — live in-memory state
   - `path: PathBuf` — `dirs::data_dir()/com.cartridge.app/library.json`
   - `covers_dir: PathBuf` — `dirs::data_dir()/com.cartridge.app/covers/`
   - `AppStore::load(app_handle) -> Self` — reads JSON from disk; on first run, seeds from a compiled-in default (mirroring the current `data.ts` demo games)
   - `AppStore::save(&self) -> anyhow::Result<()>` — atomic write (write to `.tmp` then rename) so a crash never corrupts the library
   - `AppStore::patch_game(&mut self, id: u64, patch: GamePatch) -> Option<Game>` — applies only `Some` fields, auto-saves, returns the updated game
-- [ ] **Wire into `src-tauri/src/lib.rs`** — call `AppStore::load()` in the `setup` hook, register with `app.manage()`; remove placeholder `greet` command
+- [x] **Wire into `src-tauri/src/lib.rs`** — call `AppStore::load()` in the `setup` hook, register with `app.manage()`; remove placeholder `greet` command
 
 ---
 
@@ -155,19 +155,19 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 
 > One file per domain under `src-tauri/src/commands/`. All commands return `Result<T, String>` (anyhow errors stringified) so JS `invoke()` rejects on failure.
 
-- [ ] **`src-tauri/src/commands/data.rs`**
+- [x] **`src-tauri/src/commands/data.rs`**
   - `load_data(state) -> CartridgeData` — clones in-memory state; called once on app boot
   - `patch_game(state, id: u64, patch: GamePatch) -> Game` — delegates to `AppStore::patch_game`, triggers save
   - `save_prefs(state, prefs: Prefs)` — replaces `data.prefs`, saves
   - `export_json(state) -> String` — pretty-prints `CartridgeData` (strips `api_key` from accounts before returning)
 
-- [ ] **`src-tauri/src/commands/lists.rs`**
-  - `create_list(state, list: GameList) -> GameList` — assigns a nanoid, pushes to `data.lists`, saves
+- [x] **`src-tauri/src/commands/lists.rs`**
+  - `create_list(state, list: GameList) -> GameList` — assigns a UUID, pushes to `data.lists`, saves
   - `delete_list(state, id: String)` — removes by id, saves
   - `add_to_list(state, list_id: String, game_id: u64)` — appends to `game_ids` of a manual list, saves
   - `remove_from_list(state, list_id: String, game_id: u64)` — removes from `game_ids`, saves
 
-- [ ] **`src-tauri/src/commands/launch.rs`**
+- [x] **`src-tauri/src/commands/launch.rs`**
   - `launch_game(state, app_handle, game_id: u64)` — builds platform deep link from `game.app_id`, opens via `tauri-plugin-opener`:
     - Steam → `steam://rungameid/{app_id}`
     - GOG → `goggalaxy://openGame/{app_id}`
@@ -175,9 +175,9 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
     - Fallback (no `app_id`) → opens `game.links.store` in the default browser
   - `open_url(app_handle, url: String)` — generic wrapper used for Metacritic / OpenCritic / HLTB / store links
 
-- [ ] **`src-tauri/src/commands/sync.rs`**
+- [x] **`src-tauri/src/commands/sync.rs`**
   - `add_steam_account(state, api_key: String, steam_id: String) -> Account` — validates via `GetPlayerSummaries`; stores `api_key` in the account struct (persisted to disk, never sent to UI); saves
-  - `sync_account(state, app_handle, account_id: String) -> SyncResult`:
+  - `sync_account(state, account_id: String) -> SyncResult`:
     - **Steam**: `GET api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?include_appinfo=1&include_played_free_games=1`
       - Merge strategy: add new games, update `playtime`/`last`/`installed` on existing ones; never overwrite `rating`, `status`, `tags`, `note`, `custom`
       - Cover art: download to `covers_dir/{app_id}.jpg` from `cdn.akamai.steamstatic.com/steam/apps/{id}/library_600x900_2x.jpg` (skip if file already exists)
@@ -186,11 +186,11 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
     - Updates `account.synced` timestamp and `account.status`; saves; returns `SyncResult`
   - `remove_account(state, account_id: String)` — removes account from `data.accounts`, leaves games in library
 
-- [ ] **`src-tauri/src/commands/fs.rs`**
+- [x] **`src-tauri/src/commands/fs.rs`**
   - `get_library_path(state) -> String` — returns absolute path to `library.json`
   - `reveal_in_finder(app_handle, path: String)` — opens the enclosing folder via `tauri-plugin-opener`
 
-- [ ] **Register all commands** in `lib.rs` inside `generate_handler![...]`
+- [x] **Register all commands** in `lib.rs` inside `generate_handler![...]`
 
 ---
 
@@ -198,7 +198,7 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 
 > Thin TypeScript wrappers — no business logic, just typed `invoke()` calls. All state logic stays in `+page.svelte`.
 
-- [ ] **`src/lib/api.ts`**:
+- [x] **`src/lib/api.ts`**:
   ```ts
   export const loadData        = ()                     => invoke<CartridgeData>('load_data')
   export const patchGame       = (id, patch)            => invoke<Game>('patch_game', { id, patch })
@@ -221,12 +221,12 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
   export const revealInFinder  = (path)                 => invoke<void>('reveal_in_finder', { path })
   ```
 
-- [ ] **`src/lib/types.ts` additions**:
+- [x] **`src/lib/types.ts` additions**:
   - `appId: string | null` on `Game` (required by `launch_game`)
   - `GamePatch` — `Partial<Omit<Game, 'id'>>` (for `patchGame` call sites)
   - `SyncResult` — `{ added: number; updated: number; errors: string[] }`
 
-- [ ] **`coverSrc(game: Game): string`** helper in `src/lib/utils.ts`:
+- [x] **`coverSrc(game: Game): string`** helper in `src/lib/utils.ts`:
   - If `game.cover` starts with `/` or `~` (absolute path from sync) → `convertFileSrc(game.cover)` from `@tauri-apps/api/core`
   - Otherwise → `/covers/${game.cover}.png` (bundled static asset)
 
@@ -236,6 +236,6 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 
 > Final step: boot the app from real Rust-persisted state instead of `data.ts`.
 
-- [ ] **`src/routes/+page.svelte`** — on mount, `await loadData()` to populate `games`, `lists`, `accounts`; replace all mutation handlers with `api.ts` calls; keep derived state and filter logic client-side
-- [ ] **`src-tauri/tauri.conf.json`** — add `asset` protocol scope for `covers_dir` so `convertFileSrc` URLs resolve correctly in the webview
-- [ ] **`src/lib/data.ts`** — keep as a seed reference only; used by `AppStore::load()` on first run to populate an empty library with the 16 demo games; not imported anywhere in production UI code
+- [x] **`src/routes/+page.svelte`** — on mount, `await loadData()` to populate `games`, `lists`, `accounts`; replace all mutation handlers with `api.ts` calls; keep derived state and filter logic client-side
+- [x] **`src-tauri/tauri.conf.json`** — add `asset` protocol scope for `covers_dir` so `convertFileSrc` URLs resolve correctly in the webview
+- [x] **`src/lib/data.ts`** — keep as a seed reference only; used by `AppStore::load()` on first run to populate an empty library with the 16 demo games; not imported anywhere in production UI code

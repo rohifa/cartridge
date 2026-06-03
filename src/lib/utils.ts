@@ -1,3 +1,4 @@
+import { convertFileSrc } from '@tauri-apps/api/core';
 import type { Game, Filters } from './types.js';
 
 export function fmtHours(h: number | null): string {
@@ -10,6 +11,14 @@ export function scoreTone(v: number | null): { fg: string; bg: string; bd: strin
   if (v >= 75)   return { fg: 'oklch(0.96 0.02 150)', bg: 'oklch(0.55 0.15 150)', bd: 'transparent' };
   if (v >= 50)   return { fg: 'oklch(0.22 0.05 80)',  bg: 'oklch(0.80 0.15 85)',  bd: 'transparent' };
   return               { fg: 'oklch(0.97 0.02 25)',  bg: 'oklch(0.58 0.20 25)',  bd: 'transparent' };
+}
+
+export function coverSrc(game: Game): string | null {
+  if (!game.cover) return null;
+  if (game.cover.startsWith('/') || game.cover.startsWith('~')) {
+    return convertFileSrc(game.cover);
+  }
+  return `/covers/${game.cover}.png`;
 }
 
 export function matchFilters(g: Game, f: Partial<Filters> | null | undefined): boolean {

@@ -1,14 +1,39 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
+use std::sync::Mutex;
+
+use tauri::Manager;
+
+mod commands;
+mod models;
+mod store;
+
+use store::AppStore;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .setup(|app| {
+            let store = AppStore::load(app.handle());
+            app.manage(Mutex::new(store));
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::data::load_data,
+            commands::data::patch_game,
+            commands::data::save_prefs,
+            commands::data::export_json,
+            commands::lists::create_list,
+            commands::lists::delete_list,
+            commands::lists::add_to_list,
+            commands::lists::remove_from_list,
+            commands::launch::launch_game,
+            commands::launch::open_url,
+            commands::sync::add_steam_account,
+            commands::sync::sync_account,
+            commands::sync::remove_account,
+            commands::fs::get_library_path,
+            commands::fs::reveal_in_finder,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

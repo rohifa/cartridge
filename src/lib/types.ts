@@ -21,6 +21,15 @@ export interface Game {
   note: string;
   links: Partial<Record<'metacritic' | 'opencritic' | 'hltb' | 'store', string>>;
   custom: Array<{ k: string; v: string }>;
+  appId: string | null;
+}
+
+export type GamePatch = Partial<Omit<Game, 'id'>>;
+
+export interface SyncResult {
+  added: number;
+  updated: number;
+  errors: string[];
 }
 
 export interface Account {
@@ -81,4 +90,5 @@ export interface CartridgeData {
   lists: GameList[];
   genres: string[];
   statuses: Array<{ id: GameStatus; label: string; icon: string }>;
+  prefs: Prefs;
 }

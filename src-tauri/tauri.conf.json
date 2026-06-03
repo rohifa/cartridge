@@ -18,7 +18,14 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "allow": ["$APPDATA/com.cartridge.app/covers/**"],
+          "deny": []
+        }
+      }
     }
   },
   "bundle": {

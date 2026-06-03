@@ -1,4 +1,11 @@
-import type { CartridgeData } from './types.js';
+import type { CartridgeData, Prefs } from './types.js';
+
+const defaultPrefs: Prefs = {
+  defaultView: 'grid',
+  showScores: true,
+  confirmLaunch: false,
+  autoSync: false,
+};
 
 export const cartridgeData: CartridgeData = {
   accounts: [
@@ -16,7 +23,7 @@ export const cartridgeData: CartridgeData = {
       tags: ['favourite', 'finished'],
       note: 'Came back to it three times before it clicked. The pale court is the best run in the game.',
       links: { metacritic: 'https://metacritic.com/game/hollow-knight', opencritic: 'https://opencritic.com/game/2710/hollow-knight', hltb: 'https://howlongtobeat.com/game/26219' },
-      custom: [{ k: '100% completion', v: '61 h' }, { k: 'Hardest boss', v: 'Pure Vessel' }],
+      appId: null, custom: [{ k: '100% completion', v: '61 h' }, { k: 'Hardest boss', v: 'Pure Vessel' }],
     },
     {
       id: 2, title: 'Disco Elysium', cover: 'disco', platform: 'gog',
@@ -25,7 +32,7 @@ export const cartridgeData: CartridgeData = {
       metacritic: 91, opencritic: 90, userScore: 89,
       tags: ['finished'], note: '',
       links: { metacritic: 'https://metacritic.com/game/disco-elysium', opencritic: '' },
-      custom: [{ k: 'Build', v: 'Intellect / FMB' }],
+      appId: null, custom: [{ k: 'Build', v: 'Intellect / FMB' }],
     },
     {
       id: 3, title: 'Celeste', cover: 'celeste', platform: 'steam',
@@ -34,14 +41,14 @@ export const cartridgeData: CartridgeData = {
       metacritic: 92, opencritic: 91, userScore: 93,
       tags: ['favourite'], note: 'Chapter 9 nearly broke me.',
       links: { hltb: 'https://howlongtobeat.com/game/38050' },
-      custom: [{ k: 'Berries', v: '175 / 202' }],
+      appId: null, custom: [{ k: 'Berries', v: '175 / 202' }],
     },
     {
       id: 4, title: 'Outer Wilds', cover: 'outer', platform: 'epic',
       genre: ['Adventure', 'Mystery'], dev: 'Mobius Digital', year: 2019,
       playtime: null, last: null, rating: 5, status: 'backlog', installed: false,
       metacritic: 85, opencritic: 89, userScore: 91,
-      tags: ['backlog'], note: '', links: {}, custom: [],
+      tags: ['backlog'], note: '', links: {}, appId: null, custom: [],
     },
     {
       id: 5, title: 'The Witcher 3', cover: 'witcher', platform: 'gog',
@@ -50,7 +57,7 @@ export const cartridgeData: CartridgeData = {
       metacritic: 93, opencritic: 92, userScore: 94,
       tags: ['finished', 'replay'], note: '',
       links: { metacritic: 'https://metacritic.com/game/the-witcher-3', opencritic: 'https://opencritic.com/game/463/the-witcher-3' },
-      custom: [{ k: 'DLC owned', v: 'Both' }],
+      appId: null, custom: [{ k: 'DLC owned', v: 'Both' }],
     },
     {
       id: 6, title: 'Hades', cover: 'hades', platform: 'steam',
@@ -59,7 +66,7 @@ export const cartridgeData: CartridgeData = {
       metacritic: 93, opencritic: 91, userScore: 96,
       tags: ['favourite'], note: '',
       links: { metacritic: 'https://metacritic.com/game/hades' },
-      custom: [{ k: 'Heat cleared', v: '16' }],
+      appId: null, custom: [{ k: 'Heat cleared', v: '16' }],
     },
     {
       id: 7, title: 'Stardew Valley', cover: 'stardew', platform: 'steam',
@@ -68,14 +75,14 @@ export const cartridgeData: CartridgeData = {
       metacritic: 89, opencritic: 88, userScore: 97,
       tags: ['co-op'], note: '',
       links: { hltb: 'https://howlongtobeat.com/game/26863' },
-      custom: [{ k: 'Farm type', v: 'Riverland' }],
+      appId: null, custom: [{ k: 'Farm type', v: 'Riverland' }],
     },
     {
       id: 8, title: 'Tunic', cover: 'tunic', platform: 'epic',
       genre: ['Adventure', 'Puzzle'], dev: 'Andrew Shouldice', year: 2022,
       playtime: null, last: null, rating: 0, status: 'backlog', installed: false,
       metacritic: 85, opencritic: 86, userScore: 84,
-      tags: ['backlog'], note: '', links: {}, custom: [],
+      tags: ['backlog'], note: '', links: {}, appId: null, custom: [],
     },
     {
       id: 9, title: 'Inscryption', cover: 'inscryption', platform: 'steam',
@@ -84,7 +91,7 @@ export const cartridgeData: CartridgeData = {
       metacritic: 85, opencritic: 87, userScore: 88,
       tags: ['finished'], note: '',
       links: { metacritic: 'https://metacritic.com/game/inscryption' },
-      custom: [],
+      appId: null, custom: [],
     },
     {
       id: 10, title: 'Pentiment', cover: 'pentiment', platform: 'gog',
@@ -93,35 +100,35 @@ export const cartridgeData: CartridgeData = {
       metacritic: 88, opencritic: 86, userScore: 82,
       tags: ['finished'], note: '',
       links: {},
-      custom: [{ k: 'Playthroughs', v: '1' }],
+      appId: null, custom: [{ k: 'Playthroughs', v: '1' }],
     },
     {
       id: 11, title: 'Gris', cover: 'gris', platform: 'gog',
       genre: ['Platformer', 'Art'], dev: 'Nomada Studio', year: 2018,
       playtime: 6.2, last: '3 months ago', rating: 5, status: 'beaten', installed: true,
       metacritic: 81, opencritic: 80, userScore: 86,
-      tags: ['favourite', 'short'], note: '', links: {}, custom: [],
+      tags: ['favourite', 'short'], note: '', links: {}, appId: null, custom: [],
     },
     {
       id: 12, title: 'Spiritfarer', cover: 'spiritfarer', platform: 'steam',
       genre: ['Simulation', 'Cozy'], dev: 'Thunder Lotus', year: 2020,
       playtime: 42.7, last: '1 month ago', rating: 4, status: 'beaten', installed: true,
       metacritic: 84, opencritic: 83, userScore: 90,
-      tags: ['co-op'], note: '', links: {}, custom: [],
+      tags: ['co-op'], note: '', links: {}, appId: null, custom: [],
     },
     {
       id: 13, title: 'Kentucky Route Zero', cover: null, platform: 'epic',
       genre: ['Narrative'], dev: 'Cardboard Computer', year: 2020,
       playtime: null, last: null, rating: 0, status: 'wishlist', installed: false,
       metacritic: 82, opencritic: 79, userScore: 74,
-      tags: ['backlog'], note: '', links: {}, custom: [],
+      tags: ['backlog'], note: '', links: {}, appId: null, custom: [],
     },
     {
       id: 14, title: 'Return of the Obra Dinn', cover: null, platform: 'steam',
       genre: ['Mystery', 'Puzzle'], dev: 'Lucas Pope', year: 2018,
       playtime: 11.4, last: '7 months ago', rating: 5, status: 'beaten', installed: true,
       metacritic: 89, opencritic: 90, userScore: 91,
-      tags: ['finished', 'short'], note: '', links: {}, custom: [],
+      tags: ['finished', 'short'], note: '', links: {}, appId: null, custom: [],
     },
     {
       id: 15, title: 'Cyberpunk 2077', cover: null, platform: 'gog',
@@ -130,7 +137,7 @@ export const cartridgeData: CartridgeData = {
       metacritic: 86, opencritic: 57, userScore: 42,
       tags: ['replay'], note: '',
       links: { metacritic: 'https://metacritic.com/game/cyberpunk-2077' },
-      custom: [],
+      appId: null, custom: [],
     },
     {
       id: 16, title: "Baldur's Gate 3", cover: null, platform: 'steam',
@@ -139,7 +146,7 @@ export const cartridgeData: CartridgeData = {
       metacritic: 96, opencritic: 97, userScore: 92,
       tags: ['favourite', 'co-op'], note: '',
       links: {},
-      custom: [{ k: 'Act', v: 'III' }],
+      appId: null, custom: [{ k: 'Act', v: 'III' }],
     },
   ],
 
@@ -165,4 +172,5 @@ export const cartridgeData: CartridgeData = {
     { id: 'dropped',  label: 'Dropped',  icon: 'x' },
     { id: 'wishlist', label: 'Wishlist', icon: 'bookmark' },
   ],
+  prefs: defaultPrefs,
 };
