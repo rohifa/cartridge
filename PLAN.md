@@ -93,13 +93,13 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 
 ---
 
-## Section 8 — Overlays
-- [ ] `src/lib/components/CreateListModal.svelte`
+## Section 8 — Overlays ✅
+- [x] `src/lib/components/CreateListModal.svelte`
   - Name input (autofocus, Enter to submit)
   - Type selector: Manual vs Smart (Smart disabled if no active filters)
   - Color picker (6 dot swatches)
   - Cancel / Create list buttons
-- [ ] `src/lib/components/LaunchToast.svelte`
+- [x] `src/lib/components/LaunchToast.svelte`
   - Fixed bottom-center toast: play icon, game title, "Handing off to {platform}…"
   - Auto-dismisses after 2.6 s
 
