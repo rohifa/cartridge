@@ -15,22 +15,22 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 
 ---
 
-## Section 2 — Primitives
-- [ ] `src/lib/constants.ts` — PLAT, TAGCOLOR, TAGBG, LISTDOT, STATUS_META, SCORE_SOURCES, ALLTAGS
-- [ ] `src/lib/utils.ts` — `fmtHours()`, `matchFilters()`, `scoreTone()`
-- [ ] `src/lib/components/Icon.svelte` — thin wrapper around lucide-svelte icon
-- [ ] `src/lib/components/PlatformDot.svelte` — colored dot with optional ring
-- [ ] `src/lib/components/Stars.svelte` — 5-star display, optional click-to-set
-- [ ] `src/lib/components/Tag.svelte` — colored chip with optional remove button
-- [ ] `src/lib/components/ScoreBadge.svelte` — green/yellow/red numeric badge (sm/md/lg)
-- [ ] `src/lib/components/ScoreCluster.svelte` — MC + OC + USR badges side by side
-- [ ] `src/lib/components/StatusPill.svelte` — colored status pill (backlog/playing/beaten/dropped/wishlist)
-- [ ] `src/lib/components/LaunchButton.svelte` — gold "Launch" button or "Not installed" disabled state
+## Section 2 — Primitives ✅
+- [x] `src/lib/constants.ts` — PLAT, TAGCOLOR, TAGBG, LISTDOT, STATUS_META, SCORE_SOURCES, ALLTAGS
+- [x] `src/lib/utils.ts` — `fmtHours()`, `matchFilters()`, `scoreTone()`
+- [x] `src/lib/components/Icon.svelte` — dynamic wrapper around `@lucide/svelte`
+- [x] `src/lib/components/PlatformDot.svelte` — colored dot with optional ring
+- [x] `src/lib/components/Stars.svelte` — 5-star display, optional click-to-set
+- [x] `src/lib/components/Tag.svelte` — colored chip with optional remove button
+- [x] `src/lib/components/ScoreBadge.svelte` — green/yellow/red numeric badge (sm/md/lg)
+- [x] `src/lib/components/ScoreCluster.svelte` — MC + OC + USR badges side by side
+- [x] `src/lib/components/StatusPill.svelte` — colored status pill (backlog/playing/beaten/dropped/wishlist)
+- [x] `src/lib/components/LaunchButton.svelte` — gold "Launch" button or "Not installed" disabled state
 
 ---
 
-## Section 3 — Sidebar
-- [ ] `src/lib/components/Sidebar.svelte`
+## Section 3 — Sidebar ✅
+- [x] `src/lib/components/Sidebar.svelte`
   - macOS traffic-light dots
   - Cartridge logo + wordmark
   - Library section: All games, Recently played, Favourites, Never played
