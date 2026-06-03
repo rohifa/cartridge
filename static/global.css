@@ -1,0 +1,64 @@
+/* ============================================================
+   CARTRIDGE — Global resets and base element styles
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg-0);
+  color: var(--fg-1);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+#svelte { height: 100vh; }
+
+input, textarea, button, select { font-family: inherit; }
+
+/* ---- Custom scrollbars ---- */
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 6px; border: 3px solid var(--bg-1); }
+::-webkit-scrollbar-thumb:hover { background: oklch(0.40 0.01 265); }
+
+/* ---- Dual-range slider (year filter) ---- */
+.range-dual {
+  position: absolute;
+  left: 0; right: 0;
+  width: 100%;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: none;
+  height: 24px;
+}
+.range-dual::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--fg-1);
+  border: 2px solid var(--accent);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+.range-dual::-moz-range-thumb {
+  pointer-events: auto;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--fg-1);
+  border: 2px solid var(--accent);
+  cursor: pointer;
+}
+
+/* ---- Spin animation (sync button) ---- */
+@keyframes crt-spin { to { transform: rotate(360deg); } }

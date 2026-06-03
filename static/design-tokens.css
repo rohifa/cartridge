@@ -1,0 +1,189 @@
+/* ============================================================
+   CARTRIDGE — Color & Type Foundations
+   A calm, dense, local-first Mac library utility.
+   Graphite chrome + warm gold accent. Cover art does the color.
+   ============================================================ */
+
+/* Fonts loaded via Google Fonts <link> in each HTML file:
+   Geist (UI/body) + Geist Mono (data, playtime, tags). */
+
+:root {
+  /* ---- Type families ---- */
+  --font-ui:   "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* ---- Type scale (dense Mac-app scale, 13px base) ---- */
+  --text-hero:    28px;  /* detail-view game title */
+  --text-title:   20px;  /* view / window title */
+  --text-section: 15px;  /* group + section headers */
+  --text-body:    13px;  /* default UI text */
+  --text-meta:    12px;  /* secondary metadata */
+  --text-label:   11px;  /* labels, platform tags, captions */
+  --text-micro:   10px;  /* overline / tiny eyebrow */
+
+  --leading-tight:  1.15;
+  --leading-snug:   1.3;
+  --leading-normal: 1.5;
+
+  --weight-regular: 400;
+  --weight-medium:  500;
+  --weight-semibold:600;
+  --weight-bold:    700;
+
+  --track-tight:  -0.01em;
+  --track-normal: 0;
+  --track-wide:   0.04em;   /* overlines / small caps labels */
+
+  /* ---- Spacing (4px base grid) ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ---- Radii (subtle, utility) ---- */
+  --radius-xs: 3px;   /* tags, chips */
+  --radius-sm: 5px;   /* buttons, inputs */
+  --radius-md: 7px;   /* cover art, small cards */
+  --radius-lg: 10px;  /* panels, modals */
+  --radius-xl: 14px;  /* large surfaces */
+  --radius-full: 999px;
+
+  /* ---- Brand accent: cartridge gold (the connector pins) ---- */
+  --gold-300: oklch(0.86 0.09 82);
+  --gold-400: oklch(0.80 0.12 80);
+  --gold-500: oklch(0.74 0.13 76);   /* primary accent */
+  --gold-600: oklch(0.66 0.13 72);
+
+  /* ---- Platform identity colors (used small: dots & badges) ---- */
+  --plat-steam: oklch(0.72 0.13 240);  /* steel blue   */
+  --plat-gog:   oklch(0.66 0.16 300);  /* violet       */
+  --plat-epic:  oklch(0.88 0.005 270); /* near-white   */
+
+  /* ---- Logo accent spectrum (for user tags / categories) ---- */
+  --spec-green:  oklch(0.74 0.18 145);
+  --spec-purple: oklch(0.60 0.20 300);
+  --spec-red:    oklch(0.62 0.21 25);
+  --spec-blue:   oklch(0.70 0.13 240);
+  --spec-amber:  oklch(0.78 0.13 75);
+  --spec-teal:   oklch(0.72 0.10 195);
+
+  /* ---- Semantic ---- */
+  --ok:    oklch(0.72 0.14 150);  /* synced / success  */
+  --warn:  oklch(0.74 0.14 65);   /* stale / attention */
+  --danger:oklch(0.64 0.20 25);   /* error / destroy   */
+  --info:  oklch(0.72 0.12 240);
+}
+
+/* ============================================================
+   DARK THEME (primary)  — graphite gunmetal, the cartridge shell
+   ============================================================ */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-0: oklch(0.20 0.006 265);   /* app frame / deepest    */
+  --bg-1: oklch(0.235 0.006 265);  /* main content surface   */
+  --bg-2: oklch(0.275 0.007 265);  /* cards / raised         */
+  --bg-3: oklch(0.32 0.008 265);   /* hover / inset wells    */
+  --bg-sel:oklch(0.74 0.13 76 / 0.16); /* selection wash (gold) */
+
+  --fg-1: oklch(0.95 0.004 265);   /* primary text           */
+  --fg-2: oklch(0.74 0.006 265);   /* secondary text         */
+  --fg-3: oklch(0.58 0.007 265);   /* tertiary / muted       */
+  --fg-on-accent: oklch(0.22 0.02 70);
+
+  --border-1: oklch(1 0 0 / 0.08); /* hairline divider       */
+  --border-2: oklch(1 0 0 / 0.13); /* stronger edge          */
+  --border-focus: var(--gold-500);
+
+  --accent: var(--gold-500);
+  --accent-hover: var(--gold-400);
+  --accent-press: var(--gold-600);
+  --accent-soft: oklch(0.74 0.13 76 / 0.14);
+
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.4);
+  --shadow-md: 0 4px 14px oklch(0 0 0 / 0.45);
+  --shadow-lg: 0 16px 48px oklch(0 0 0 / 0.55);
+  --cover-ring: inset 0 0 0 1px oklch(1 0 0 / 0.07);
+}
+
+/* ============================================================
+   LIGHT THEME — warm paper, calm and considered
+   ============================================================ */
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-0: oklch(0.94 0.004 80);
+  --bg-1: oklch(0.975 0.003 80);
+  --bg-2: oklch(1 0 0);
+  --bg-3: oklch(0.93 0.004 80);
+  --bg-sel: oklch(0.74 0.13 76 / 0.18);
+
+  --fg-1: oklch(0.27 0.008 265);
+  --fg-2: oklch(0.45 0.008 265);
+  --fg-3: oklch(0.60 0.008 265);
+  --fg-on-accent: oklch(0.22 0.02 70);
+
+  --border-1: oklch(0 0 0 / 0.09);
+  --border-2: oklch(0 0 0 / 0.15);
+  --border-focus: var(--gold-600);
+
+  --accent: var(--gold-600);
+  --accent-hover: var(--gold-500);
+  --accent-press: oklch(0.58 0.13 70);
+  --accent-soft: oklch(0.74 0.13 76 / 0.16);
+
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.08);
+  --shadow-md: 0 4px 14px oklch(0 0 0 / 0.10);
+  --shadow-lg: 0 16px 48px oklch(0 0 0 / 0.16);
+  --cover-ring: inset 0 0 0 1px oklch(0 0 0 / 0.08);
+}
+
+/* ============================================================
+   SEMANTIC ELEMENT STYLES
+   ============================================================ */
+.t-hero {
+  font: var(--weight-semibold) var(--text-hero)/var(--leading-tight) var(--font-ui);
+  letter-spacing: var(--track-tight);
+  color: var(--fg-1);
+}
+.t-title {
+  font: var(--weight-semibold) var(--text-title)/var(--leading-snug) var(--font-ui);
+  letter-spacing: var(--track-tight);
+  color: var(--fg-1);
+}
+.t-section {
+  font: var(--weight-semibold) var(--text-section)/var(--leading-snug) var(--font-ui);
+  color: var(--fg-1);
+}
+.t-body {
+  font: var(--weight-regular) var(--text-body)/var(--leading-normal) var(--font-ui);
+  color: var(--fg-1);
+}
+.t-meta {
+  font: var(--weight-regular) var(--text-meta)/var(--leading-normal) var(--font-ui);
+  color: var(--fg-2);
+}
+.t-label {
+  font: var(--weight-medium) var(--text-label)/1.2 var(--font-ui);
+  color: var(--fg-2);
+}
+.t-overline {
+  font: var(--weight-semibold) var(--text-micro)/1.2 var(--font-ui);
+  letter-spacing: var(--track-wide);
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+/* Mono is used for all numeric / technical metadata:
+   playtime, sizes, dates, IDs, tag chips. */
+.t-data {
+  font: var(--weight-medium) var(--text-meta)/1.3 var(--font-mono);
+  letter-spacing: var(--track-tight);
+  color: var(--fg-1);
+  font-feature-settings: "tnum" 1;
+}
