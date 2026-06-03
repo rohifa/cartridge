@@ -40,8 +40,8 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 
 ---
 
-## Section 4 — Toolbar + FilterPanel
-- [ ] `src/lib/components/Toolbar.svelte`
+## Section 4 — Toolbar + FilterPanel ✅
+- [x] `src/lib/components/Toolbar.svelte`
   - Title + count (mono)
   - Search field with focus ring
   - Filters button (with active count badge)
@@ -49,7 +49,7 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
   - Grid/List view toggle (segmented)
   - Theme toggle (sun/moon)
   - Sync button (spinner animation when syncing)
-- [ ] `src/lib/components/FilterPanel.svelte`
+- [x] `src/lib/components/FilterPanel.svelte`
   - Category chips (all genres)
   - Platform chips (Steam, GOG, Epic)
   - Status chips (backlog/playing/beaten/dropped/wishlist)
@@ -60,16 +60,16 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 
 ---
 
-## Section 5 — Library Views
-- [ ] `src/lib/components/Cover.svelte` — 3:4 aspect ratio cover art; fallback with gamepad icon + "no cover art"
-- [ ] `src/lib/components/AggBar.svelte` — game count, total playtime, avg rating, avg Metacritic; list name + type badge when in a list
-- [ ] `src/lib/components/GridView.svelte` — auto-fill grid of GridCards; hover overlay with LaunchButton
-- [ ] `src/lib/components/ListView.svelte` — sticky header row; ListRows with cover thumbnail, platform dot, status pill, score badges, playtime, installed/cloud indicator
+## Section 5 — Library Views ✅
+- [x] `src/lib/components/Cover.svelte` — 3:4 aspect ratio cover art; fallback with gamepad icon + "no cover art"
+- [x] `src/lib/components/AggBar.svelte` — game count, total playtime, avg rating, avg Metacritic; list name + type badge when in a list
+- [x] `src/lib/components/GridView.svelte` — auto-fill grid of GridCards; hover overlay with LaunchButton
+- [x] `src/lib/components/ListView.svelte` — sticky header row; ListRows with cover thumbnail, platform dot, status pill, score badges, playtime, installed/cloud indicator
 
 ---
 
-## Section 6 — Game Detail
-- [ ] `src/lib/components/GameDetail.svelte`
+## Section 6 — Game Detail ✅
+- [x] `src/lib/components/GameDetail.svelte`
   - Page header: back button, game title breadcrumb, LaunchButton
   - Hero: sticky cover (232px), large LaunchButton, installed status
   - Right column: platform + dev + status pill, h1 title, genre chips
@@ -82,8 +82,8 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 
 ---
 
-## Section 7 — Settings
-- [ ] `src/lib/components/Settings.svelte`
+## Section 7 — Settings ✅
+- [x] `src/lib/components/Settings.svelte`
   - Connections: AccountCard per account (platform dot, handle, game count, sync status badge, sync button, remove)
   - Steam: API key + Steam ID fields; GOG: OAuth note; Epic: playtime-not-tracked notice
   - "Add an account" dashed button
@@ -121,3 +121,121 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 - Cover images served from `static/covers/`; referenced as `/covers/{name}.png`
 - No SSR — `prerender = true`, `ssr = false` already set in `+layout.ts`
 - Inline styles mirror the prototype exactly; CSS classes used only for design-token utilities
+
+---
+
+## Section 10 — Rust Data Layer
+
+> Establishes the in-memory store, file persistence, and Rust mirrors of the TypeScript types. All subsequent command modules depend on this.
+
+- [ ] **Cargo dependencies** — add to `src-tauri/Cargo.toml`:
+  - `tokio = { version = "1", features = ["full"] }` — async runtime for HTTP calls
+  - `reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }` — HTTP client for platform APIs and cover art downloads
+  - `dirs = "5"` — resolves `~/Library/Application Support/…`
+  - `anyhow = "1"` — ergonomic error propagation; errors mapped to `String` at the JS boundary
+- [ ] **`src-tauri/src/models.rs`** — Rust structs mirroring `types.ts`, all `serde::{Serialize, Deserialize}`:
+  - `Platform`, `GameStatus`, `ListColor`, `ListKind` enums
+  - `Game` struct — all existing fields; add `app_id: Option<String>` (platform-native ID needed for launch deep links)
+  - `GamePatch` struct — every `Game` field wrapped in `Option<T>` for partial updates without clobbering user data
+  - `Account` struct — add `api_key: Option<String>` (stored in the JSON file, never returned to the frontend)
+  - `GameList`, `Filters`, `Prefs`, `CartridgeData` structs
+  - `SyncResult` struct: `{ added: u32, updated: u32, errors: Vec<String> }`
+- [ ] **`src-tauri/src/store.rs`** — `AppStore` managed as `Mutex<AppStore>` via `app.manage()`:
+  - `data: CartridgeData` — live in-memory state
+  - `path: PathBuf` — `dirs::data_dir()/com.cartridge.app/library.json`
+  - `covers_dir: PathBuf` — `dirs::data_dir()/com.cartridge.app/covers/`
+  - `AppStore::load(app_handle) -> Self` — reads JSON from disk; on first run, seeds from a compiled-in default (mirroring the current `data.ts` demo games)
+  - `AppStore::save(&self) -> anyhow::Result<()>` — atomic write (write to `.tmp` then rename) so a crash never corrupts the library
+  - `AppStore::patch_game(&mut self, id: u64, patch: GamePatch) -> Option<Game>` — applies only `Some` fields, auto-saves, returns the updated game
+- [ ] **Wire into `src-tauri/src/lib.rs`** — call `AppStore::load()` in the `setup` hook, register with `app.manage()`; remove placeholder `greet` command
+
+---
+
+## Section 11 — Tauri Commands
+
+> One file per domain under `src-tauri/src/commands/`. All commands return `Result<T, String>` (anyhow errors stringified) so JS `invoke()` rejects on failure.
+
+- [ ] **`src-tauri/src/commands/data.rs`**
+  - `load_data(state) -> CartridgeData` — clones in-memory state; called once on app boot
+  - `patch_game(state, id: u64, patch: GamePatch) -> Game` — delegates to `AppStore::patch_game`, triggers save
+  - `save_prefs(state, prefs: Prefs)` — replaces `data.prefs`, saves
+  - `export_json(state) -> String` — pretty-prints `CartridgeData` (strips `api_key` from accounts before returning)
+
+- [ ] **`src-tauri/src/commands/lists.rs`**
+  - `create_list(state, list: GameList) -> GameList` — assigns a nanoid, pushes to `data.lists`, saves
+  - `delete_list(state, id: String)` — removes by id, saves
+  - `add_to_list(state, list_id: String, game_id: u64)` — appends to `game_ids` of a manual list, saves
+  - `remove_from_list(state, list_id: String, game_id: u64)` — removes from `game_ids`, saves
+
+- [ ] **`src-tauri/src/commands/launch.rs`**
+  - `launch_game(state, app_handle, game_id: u64)` — builds platform deep link from `game.app_id`, opens via `tauri-plugin-opener`:
+    - Steam → `steam://rungameid/{app_id}`
+    - GOG → `goggalaxy://openGame/{app_id}`
+    - Epic → `com.epicgames.launcher://apps/{app_id}?action=launch&silent=true`
+    - Fallback (no `app_id`) → opens `game.links.store` in the default browser
+  - `open_url(app_handle, url: String)` — generic wrapper used for Metacritic / OpenCritic / HLTB / store links
+
+- [ ] **`src-tauri/src/commands/sync.rs`**
+  - `add_steam_account(state, api_key: String, steam_id: String) -> Account` — validates via `GetPlayerSummaries`; stores `api_key` in the account struct (persisted to disk, never sent to UI); saves
+  - `sync_account(state, app_handle, account_id: String) -> SyncResult`:
+    - **Steam**: `GET api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?include_appinfo=1&include_played_free_games=1`
+      - Merge strategy: add new games, update `playtime`/`last`/`installed` on existing ones; never overwrite `rating`, `status`, `tags`, `note`, `custom`
+      - Cover art: download to `covers_dir/{app_id}.jpg` from `cdn.akamai.steamstatic.com/steam/apps/{id}/library_600x900_2x.jpg` (skip if file already exists)
+      - Sets `game.cover` to the absolute path; `coverSrc()` on the frontend will call `convertFileSrc()` for these
+    - **GOG / Epic**: return `SyncResult { errors: ["Not implemented"] }` (stubs; can be filled in later)
+    - Updates `account.synced` timestamp and `account.status`; saves; returns `SyncResult`
+  - `remove_account(state, account_id: String)` — removes account from `data.accounts`, leaves games in library
+
+- [ ] **`src-tauri/src/commands/fs.rs`**
+  - `get_library_path(state) -> String` — returns absolute path to `library.json`
+  - `reveal_in_finder(app_handle, path: String)` — opens the enclosing folder via `tauri-plugin-opener`
+
+- [ ] **Register all commands** in `lib.rs` inside `generate_handler![...]`
+
+---
+
+## Section 12 — Frontend API Bridge
+
+> Thin TypeScript wrappers — no business logic, just typed `invoke()` calls. All state logic stays in `+page.svelte`.
+
+- [ ] **`src/lib/api.ts`**:
+  ```ts
+  export const loadData        = ()                     => invoke<CartridgeData>('load_data')
+  export const patchGame       = (id, patch)            => invoke<Game>('patch_game', { id, patch })
+  export const savePrefs       = (prefs)                => invoke<void>('save_prefs', { prefs })
+  export const exportJson      = ()                     => invoke<string>('export_json')
+
+  export const createList      = (list)                 => invoke<GameList>('create_list', { list })
+  export const deleteList      = (id)                   => invoke<void>('delete_list', { id })
+  export const addToList       = (listId, gameId)       => invoke<void>('add_to_list', { listId, gameId })
+  export const removeFromList  = (listId, gameId)       => invoke<void>('remove_from_list', { listId, gameId })
+
+  export const launchGame      = (gameId)               => invoke<void>('launch_game', { gameId })
+  export const openUrl         = (url)                  => invoke<void>('open_url', { url })
+
+  export const addSteamAccount = (apiKey, steamId)      => invoke<Account>('add_steam_account', { apiKey, steamId })
+  export const syncAccount     = (accountId)            => invoke<SyncResult>('sync_account', { accountId })
+  export const removeAccount   = (accountId)            => invoke<void>('remove_account', { accountId })
+
+  export const getLibraryPath  = ()                     => invoke<string>('get_library_path')
+  export const revealInFinder  = (path)                 => invoke<void>('reveal_in_finder', { path })
+  ```
+
+- [ ] **`src/lib/types.ts` additions**:
+  - `appId: string | null` on `Game` (required by `launch_game`)
+  - `GamePatch` — `Partial<Omit<Game, 'id'>>` (for `patchGame` call sites)
+  - `SyncResult` — `{ added: number; updated: number; errors: string[] }`
+
+- [ ] **`coverSrc(game: Game): string`** helper in `src/lib/utils.ts`:
+  - If `game.cover` starts with `/` or `~` (absolute path from sync) → `convertFileSrc(game.cover)` from `@tauri-apps/api/core`
+  - Otherwise → `/covers/${game.cover}.png` (bundled static asset)
+
+---
+
+## Section 13 — Wiring: Replace Mock Data
+
+> Final step: boot the app from real Rust-persisted state instead of `data.ts`.
+
+- [ ] **`src/routes/+page.svelte`** — on mount, `await loadData()` to populate `games`, `lists`, `accounts`; replace all mutation handlers with `api.ts` calls; keep derived state and filter logic client-side
+- [ ] **`src-tauri/tauri.conf.json`** — add `asset` protocol scope for `covers_dir` so `convertFileSrc` URLs resolve correctly in the webview
+- [ ] **`src/lib/data.ts`** — keep as a seed reference only; used by `AppStore::load()` on first run to populate an empty library with the 16 demo games; not imported anywhere in production UI code
