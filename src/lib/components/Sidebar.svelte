@@ -61,13 +61,6 @@
 {/snippet}
 
 <aside>
-  <!-- macOS traffic lights -->
-  <div class="traffic-lights">
-    {#each ['#ff5f57', '#febc2e', '#28c840'] as c}
-      <span class="traffic-dot" style="background:{c}"></span>
-    {/each}
-  </div>
-
   <!-- Logo row -->
   <div class="logo-row">
     <img src="/cartridge-icon.png" alt="" width="24" height="24" />
@@ -138,19 +131,6 @@
     display: flex;
     flex-direction: column;
     overflow-y: auto;
-  }
-
-  .traffic-lights {
-    display: flex;
-    gap: 8px;
-    padding: 14px 16px 0;
-  }
-
-  .traffic-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    flex: none;
   }
 
   .logo-row {
