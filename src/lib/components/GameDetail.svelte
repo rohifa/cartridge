@@ -6,8 +6,9 @@
   import Stars from './Stars.svelte';
   import Tag from './Tag.svelte';
   import Icon from './Icon.svelte';
+  import PlatIcon from './PlatIcon.svelte';
   import { PLAT, STATUS_META, SCORE_SOURCES } from '$lib/constants.js';
-  import { fmtHours } from '$lib/utils.js';
+  import { fmtHours, primaryCopy, totalPlaytime } from '$lib/utils.js';
   import type { Game } from '$lib/types.js';
 
   let {
@@ -23,6 +24,8 @@
     onAddTag: (g: Game) => void;
     onLaunch: (g: Game) => void;
   } = $props();
+
+  const primary = $derived(primaryCopy(game));
 
   const LINK_DEFS = [
     { key: 'metacritic' as const, label: 'Metacritic',    icon: 'square-m', ph: 'https://metacritic.com/game/…'    },
@@ -76,20 +79,28 @@
             <LaunchButton {game} {onLaunch} size="lg" />
           </div>
           <div class="install-status">
-            <Icon name={game.installed ? 'hard-drive' : 'cloud'} size={13} color="var(--fg-3)" />
-            {game.installed
-              ? 'Installed locally'
-              : `Not installed · on ${PLAT[game.platform].name}`}
+            <Icon name={primary?.installed ? 'hard-drive' : 'cloud'} size={13} color="var(--fg-3)" />
+            {#if primary?.installed}
+              Installed on {PLAT[primary.platform].name}
+            {:else if primary}
+              Not installed · {PLAT[primary.platform].name}
+            {:else}
+              No platform copies
+            {/if}
           </div>
         </div>
 
         <div class="right-col">
-          <!-- Platform + dev + status -->
+          <!-- Platforms + dev + status -->
           <div class="meta-row">
-            <span class="plat-dot" style="background:{PLAT[game.platform].color}"></span>
-            <span class="meta-text">{PLAT[game.platform].name}</span>
-            <span class="dot-sep">·</span>
-            <span class="meta-text">{game.dev}</span>
+            <div class="platform-dots">
+              {#each game.copies as copy}
+                <span class="plat-dot" style="background:{PLAT[copy.platform].color}"></span>
+              {/each}
+            </div>
+            {#if game.dev}
+              <span class="meta-text">{game.dev}</span>
+            {/if}
             {#if game.status}
               <div class="spacer"></div>
               <StatusPill status={game.status} />
@@ -113,10 +124,41 @@
               </div>
             {/each}
             <div class="score-tile">
-              <span class="hours-val">{fmtHours(game.playtime).replace(' h', '')}</span>
+              <span class="hours-val">{fmtHours(totalPlaytime(game)).replace(' h', '')}</span>
               <span class="score-label">Hours</span>
             </div>
           </div>
+
+          <!-- Owned on section -->
+          {#if game.copies.length > 0}
+            <div class="owned-block">
+              <div class="origin-label">
+                <Icon name="layers" size={11} color="var(--fg-3)" />
+                Owned on
+              </div>
+              <div class="copies-list">
+                {#each game.copies as copy}
+                  <div class="copy-row">
+                    <PlatIcon platform={copy.platform} size={18} />
+                    <div class="copy-info">
+                      <div class="copy-platform">{PLAT[copy.platform].name}</div>
+                      <div class="copy-meta">
+                        {#if copy.playtime != null}
+                          <span>{fmtHours(copy.playtime)}</span>
+                        {/if}
+                        {#if copy.last}
+                          <span>· {copy.last}</span>
+                        {/if}
+                        {#if copy.installed}
+                          <span>· Installed</span>
+                        {/if}
+                      </div>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/if}
 
           <!-- Store metadata -->
           <div class="store-block">
@@ -132,22 +174,6 @@
               <div class="meta-item">
                 <span class="meta-key">Released</span>
                 <span class="meta-val mono">{game.year}</span>
-              </div>
-              <div class="meta-item">
-                <span class="meta-key">Playtime</span>
-                {#if game.playtime == null}
-                  <span class="meta-val dim">not tracked on {PLAT[game.platform].name}</span>
-                {:else}
-                  <span class="meta-val mono">{fmtHours(game.playtime)}</span>
-                {/if}
-              </div>
-              <div class="meta-item">
-                <span class="meta-key">Last played</span>
-                {#if game.last}
-                  <span class="meta-val">{game.last}</span>
-                {:else}
-                  <span class="meta-val dim">never</span>
-                {/if}
               </div>
             </div>
           </div>
@@ -416,8 +442,6 @@
     font-weight: 500;
   }
 
-  .dot-sep { color: var(--fg-3); }
-
   .game-title {
     margin: 0;
     font-size: 32px;
@@ -474,6 +498,52 @@
     color: var(--fg-2);
   }
 
+  /* ── Owned on section ── */
+  .owned-block {
+    margin-top: 24px;
+  }
+
+  .platform-dots {
+    display: flex;
+    gap: 6px;
+    flex: none;
+  }
+
+  .copies-list {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .copy-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-md);
+    background: var(--bg-2);
+  }
+
+  .copy-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .copy-platform {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg-1);
+  }
+
+  .copy-meta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-3);
+    margin-top: 2px;
+  }
+
   /* ── Store metadata ── */
   .store-block { margin-top: 24px; }
 
@@ -513,7 +583,6 @@
   }
 
   .meta-val.mono { font-family: var(--font-mono); }
-  .meta-val.dim  { color: var(--fg-3); }
 
   /* ── Cards ── */
   .cards {

@@ -3,7 +3,8 @@
   import StatusPill from './StatusPill.svelte';
   import ScoreCluster from './ScoreCluster.svelte';
   import LaunchButton from './LaunchButton.svelte';
-  import { fmtHours } from '$lib/utils.js';
+  import PlatformDot from './PlatformDot.svelte';
+  import { fmtHours, totalPlaytime } from '$lib/utils.js';
   import type { Game } from '$lib/types.js';
 
   let {
@@ -37,6 +38,13 @@
             <StatusPill status={g.status} size="sm" />
           </span>
         {/if}
+        {#if g.copies.length > 0}
+          <div class="platforms-badge">
+            {#each g.copies as copy}
+              <PlatformDot platform={copy.platform} size={6} ring={false} />
+            {/each}
+          </div>
+        {/if}
         <div class="hover-overlay">
           <LaunchButton game={g} {onLaunch} />
         </div>
@@ -54,7 +62,7 @@
         {#if g.rating > 0}
           <span class="card-rating">★ {g.rating}</span>
         {/if}
-        <span>{fmtHours(g.playtime)}</span>
+        <span>{fmtHours(totalPlaytime(g))}</span>
       </div>
     </div>
   {/each}
@@ -81,6 +89,18 @@
     position: absolute;
     top: 7px;
     right: 7px;
+  }
+
+  .platforms-badge {
+    position: absolute;
+    bottom: 7px;
+    left: 7px;
+    display: flex;
+    gap: 4px;
+    padding: 4px 6px;
+    border-radius: var(--radius-sm);
+    background: oklch(0 0 0 / 0.7);
+    backdrop-filter: blur(4px);
   }
 
   .hover-overlay {

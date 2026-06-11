@@ -4,7 +4,7 @@
   import ScoreBadge from './ScoreBadge.svelte';
   import LaunchButton from './LaunchButton.svelte';
   import Icon from './Icon.svelte';
-  import { fmtHours } from '$lib/utils.js';
+  import { fmtHours, totalPlaytime, primaryCopy, coverSrc } from '$lib/utils.js';
   import type { Game } from '$lib/types.js';
 
   let {
@@ -53,21 +53,27 @@
       onkeydown={(e) => e.key === 'Enter' && onSelect(g.id)}
     >
       <!-- Thumbnail -->
-      {#if g.cover}
+      {#if coverSrc(g)}
         <img
-          src="/covers/{g.cover}.png"
+          src={coverSrc(g)}
           alt=""
           class="thumb"
         />
       {:else}
         <div class="thumb thumb-empty">
-          <PlatformDot platform={g.platform} size={7} ring={false} />
+          {#if g.copies.length > 0}
+            <PlatformDot platform={g.copies[0].platform} size={7} ring={false} />
+          {/if}
         </div>
       {/if}
 
-      <!-- Title + platform dot -->
+      <!-- Title + platform dots -->
       <span class="title-cell">
-        <PlatformDot platform={g.platform} size={7} ring={false} />
+        <div class="platform-dots">
+          {#each g.copies as copy}
+            <PlatformDot platform={copy.platform} size={7} ring={false} />
+          {/each}
+        </div>
         <span class="title-text">{g.title}</span>
       </span>
 
@@ -89,17 +95,21 @@
       {/if}
 
       <!-- Playtime -->
-      <span class="hours" class:dim={g.playtime == null}>{fmtHours(g.playtime)}</span>
+      <span class="hours" class:dim={totalPlaytime(g) == null}>{fmtHours(totalPlaytime(g))}</span>
 
       <!-- Launch on hover / cloud indicator at rest -->
       <span class="actions">
         <span class="action-launch">
           <LaunchButton game={g} {onLaunch} />
         </span>
-        <span class="action-status">
-          <Icon name={g.installed ? 'hard-drive' : 'cloud'} size={12} color="var(--fg-3)" />
-          {g.installed ? 'installed' : 'cloud'}
-        </span>
+        {#snippet actionStatus()}
+          {@const copy = primaryCopy(g)}
+          <span class="action-status">
+            <Icon name={copy?.installed ? 'hard-drive' : 'cloud'} size={12} color="var(--fg-3)" />
+            {copy?.installed ? 'installed' : 'cloud'}
+          </span>
+        {/snippet}
+        {@render actionStatus()}
       </span>
     </div>
   {/each}
@@ -172,6 +182,12 @@
     min-width: 0;
   }
 
+  .platform-dots {
+    display: flex;
+    gap: 4px;
+    flex: none;
+  }
+
   .title-text {
     font-weight: 500;
     white-space: nowrap;
@@ -190,6 +206,10 @@
   .center {
     display: flex;
     justify-content: center;
+  }
+
+  .right {
+    text-align: right;
   }
 
   .hours {

@@ -28,4 +28,5 @@ dirs = "5"
 anyhow = "1"
 uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
+egs-api = "0.14.0"
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
+  import PlatIcon from './PlatIcon.svelte';
   import ScoreBadge from './ScoreBadge.svelte';
-  import { PLAT } from '$lib/constants.js';
   import type { CartridgeData, Filters } from '$lib/types.js';
 
   let {
@@ -77,7 +77,9 @@
             class:active={filters.platforms.includes(a.platform)}
             onclick={() => toggleArr('platforms', a.platform)}
           >
-            <span class="chip-dot" style="background:{PLAT[a.platform].color}"></span>
+            <span class="chip-icon">
+              <PlatIcon platform={a.platform} size={13} />
+            </span>
             {a.name}
           </button>
         {/each}
@@ -274,11 +276,13 @@
     font-weight: 600;
   }
 
-  .chip-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
+  .chip-icon {
+    width: 14px;
+    height: 14px;
     flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   /* Year range dual slider */

@@ -23,9 +23,10 @@ export const openUrl    = (url: string)    => invoke<void>('open_url', { url });
 
 // ── Sync ──────────────────────────────────────────────────────────────────────
 
-export const addSteamAccount = (apiKey: string, steamId: string, prevId?: string) => invoke<Account>('add_steam_account', { apiKey, steamId, prevId: prevId ?? null });
-export const syncAccount     = (accountId: string)               => invoke<SyncResult>('sync_account', { accountId });
-export const removeAccount   = (accountId: string)               => invoke<void>('remove_account', { accountId });
+export const addSteamAccount  = (apiKey: string, steamId: string, prevId?: string) => invoke<Account>('add_steam_account', { apiKey, steamId, prevId: prevId ?? null });
+export const startOAuthFlow   = (platform: string)               => invoke<Account>('start_oauth_flow', { platform });
+export const syncAccount      = (accountId: string)              => invoke<SyncResult>('sync_account', { accountId });
+export const removeAccount    = (accountId: string)              => invoke<void>('remove_account', { accountId });
 
 // ── Filesystem ────────────────────────────────────────────────────────────────
 

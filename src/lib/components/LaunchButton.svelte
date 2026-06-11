@@ -1,5 +1,6 @@
 <script lang="ts">
   import { PLAT } from '$lib/constants.js';
+  import { primaryCopy } from '$lib/utils.js';
   import Icon from './Icon.svelte';
   import type { Game } from '$lib/types.js';
 
@@ -15,12 +16,15 @@
 
   let hover = $state(false);
   const big = $derived(size === 'lg');
+  const copy = $derived(primaryCopy(game));
+  const installed = $derived(copy?.installed ?? false);
+  const platform = $derived(copy?.platform ?? 'steam');
 </script>
 
-{#if !game.installed}
+{#if !installed}
   <button
     disabled
-    title="Not installed — install from {PLAT[game.platform].name}"
+    title="Not installed — install from {PLAT[platform].name}"
     style="
       display: inline-flex;
       align-items: center;
@@ -46,7 +50,7 @@
     onclick={(e) => { e.stopPropagation(); onLaunch?.(game); }}
     onmouseenter={() => (hover = true)}
     onmouseleave={() => (hover = false)}
-    title="Launch on {PLAT[game.platform].name}"
+    title="Launch on {PLAT[platform].name}"
     class="launch-btn"
     style="
       display: inline-flex;
@@ -69,7 +73,7 @@
     "
   >
     <Icon name="play" size={big ? 18 : 15} />
-    Launch{big ? ` on ${PLAT[game.platform].name}` : ''}
+    Launch{big ? ` on ${PLAT[platform].name}` : ''}
   </button>
 {/if}
 

@@ -1,5 +1,5 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
-import type { Game, Filters } from './types.js';
+import type { Game, GameCopy, Filters } from './types.js';
 
 export function fmtHours(h: number | null): string {
   if (h == null) return '— h';
@@ -21,16 +21,36 @@ export function coverSrc(game: Game): string | null {
   return `/covers/${game.cover}.png`;
 }
 
+/// Get primary copy for display (installed > most recent > first)
+export function primaryCopy(game: Game): GameCopy | null {
+  if (game.copies.length === 0) return null;
+  return game.copies.reduce((best, c) => {
+    // Prefer installed
+    if (c.installed && !best.installed) return c;
+    if (!c.installed && best.installed) return best;
+    // Then prefer most recent
+    if (c.last && (!best.last || c.last > best.last)) return c;
+    return best;
+  });
+}
+
+/// Get playtime summary (sum across all platforms)
+export function totalPlaytime(game: Game): number | null {
+  const times = game.copies.map(c => c.playtime).filter(t => t != null) as number[];
+  return times.length > 0 ? times.reduce((a, b) => a + b, 0) : null;
+}
+
 export function matchFilters(g: Game, f: Partial<Filters> | null | undefined): boolean {
   if (!f) return true;
   if (f.genres?.length    && !f.genres.some(x => g.genre.includes(x)))              return false;
-  if (f.platforms?.length && !f.platforms.includes(g.platform))                     return false;
+  if (f.platforms?.length && !g.copies.some(c => f.platforms!.includes(c.platform))) return false;
   if (f.statuses?.length  && !f.statuses.includes(g.status))                        return false;
   if (f.yearLo != null    && g.year > 0 && g.year < f.yearLo)                       return false;
   if (f.yearHi != null    && g.year > 0 && g.year > f.yearHi)                       return false;
   if (f.mcMin  && (g.metacritic == null  || g.metacritic  < f.mcMin))               return false;
   if (f.ocMin  && (g.opencritic == null  || g.opencritic  < f.ocMin))               return false;
   if (f.usrMin && (g.userScore  == null  || g.userScore   < f.usrMin))              return false;
-  if (f.playtimeMax != null && !(g.playtime != null && g.playtime <= f.playtimeMax)) return false;
+  const playtime = totalPlaytime(g);
+  if (f.playtimeMax != null && !(playtime != null && playtime <= f.playtimeMax))    return false;
   return true;
 }

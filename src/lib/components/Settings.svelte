@@ -1,11 +1,11 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
-  import { PLAT } from '$lib/constants.js';
+  import PlatIcon from './PlatIcon.svelte';
   import type { Account, CartridgeData, Prefs } from '$lib/types.js';
 
   let {
     data,
-    syncingId,
+    syncingIds,
     prefs,
     theme,
     onSync,
@@ -14,9 +14,10 @@
     onAddAccount,
     onEditAccount,
     onRemoveAccount,
+    onReauth,
   }: {
     data: CartridgeData;
-    syncingId: string | null;
+    syncingIds: Set<string>;
     prefs: Prefs;
     theme: 'dark' | 'light';
     onSync: (id: string) => void;
@@ -25,6 +26,7 @@
     onAddAccount: () => void;
     onEditAccount: (account: Account) => void;
     onRemoveAccount: (id: string) => void;
+    onReauth: (platform: string) => void;
   } = $props();
 </script>
 
@@ -40,43 +42,39 @@
     <div class="section-title">Connections</div>
     <div class="account-list">
       {#each data.accounts as account}
-        {@const syncing = syncingId === account.id}
-        {@const stale = account.status === 'stale'}
+        {@const syncing = syncingIds.has(account.id)}
+        {@const stale   = account.status === 'stale'}
+        {@const errored = account.status === 'error'}
         <div class="account-card">
           <div class="account-head">
-            <!-- Platform icon -->
             <div class="plat-icon">
-              <span
-                class="plat-dot"
-                style="width:13px;height:13px;background:{PLAT[account.platform].color}"
-              ></span>
+              <PlatIcon platform={account.platform} size={20} />
             </div>
-            <!-- Name + handle -->
             <div class="account-info">
               <div class="account-name">{account.name}</div>
               <div class="account-sub">{account.handle} · {account.count} games</div>
             </div>
-            <!-- Sync status badge -->
             <span
               class="sync-badge"
               class:badge-syncing={syncing}
-              class:badge-stale={!syncing && stale}
-              class:badge-ok={!syncing && !stale}
+              class:badge-error={!syncing && errored}
+              class:badge-stale={!syncing && !errored && stale}
+              class:badge-ok={!syncing && !errored && !stale}
             >
               {#if syncing}
                 <span class="spin"><Icon name="loader" size={12} /></span>
                 syncing…
+              {:else if errored}
+                <span class="badge-dot" style="background:var(--danger)"></span>
+                session expired
               {:else}
-                <span
-                  class="badge-dot"
-                  style="background:{stale ? 'var(--warn)' : 'var(--ok)'}"
-                ></span>
+                <span class="badge-dot" style="background:{stale ? 'var(--warn)' : 'var(--ok)'}"></span>
                 {stale ? `stale · ${account.synced}` : `synced ${account.synced}`}
               {/if}
             </span>
           </div>
 
-          <!-- Platform-specific fields -->
+          <!-- Platform-specific info -->
           {#if account.platform === 'steam'}
             <div class="fields-grid">
               <div class="field">
@@ -102,17 +100,26 @@
 
           <!-- Actions -->
           <div class="account-actions">
-            <button
-              class="sync-btn"
-              disabled={syncing}
-              onclick={() => onSync(account.id)}
-            >
-              <span class:spin={syncing}>
-                <Icon name="refresh-cw" size={14} />
-              </span>
-              {syncing ? 'Syncing…' : 'Sync now'}
-            </button>
-            <button class="edit-btn" onclick={() => onEditAccount(account)}>Edit</button>
+            {#if errored}
+              <button class="reauth-btn" onclick={() => onReauth(account.platform)}>
+                <Icon name="log-in" size={14} />
+                Re-authenticate
+              </button>
+            {:else}
+              <button
+                class="sync-btn"
+                disabled={syncing}
+                onclick={() => onSync(account.id)}
+              >
+                <span class:spin={syncing}>
+                  <Icon name="refresh-cw" size={14} />
+                </span>
+                {syncing ? 'Syncing…' : 'Sync now'}
+              </button>
+            {/if}
+            {#if account.platform === 'steam'}
+              <button class="edit-btn" onclick={() => onEditAccount(account)}>Edit</button>
+            {/if}
             <button class="remove-btn" onclick={() => onRemoveAccount(account.id)}>Remove</button>
           </div>
         </div>
@@ -309,12 +316,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-  }
-
-  .plat-dot {
-    border-radius: 50%;
-    display: inline-block;
-    flex: none;
+    color: var(--fg-2);
   }
 
   .account-info {
@@ -346,6 +348,11 @@
   .badge-syncing {
     color: var(--gold-400);
     background: var(--accent-soft);
+  }
+
+  .badge-error {
+    color: var(--danger);
+    background: oklch(0.45 0.22 25 / 0.15);
   }
 
   .badge-stale {
@@ -432,6 +439,22 @@
   .sync-btn:disabled {
     cursor: default;
     opacity: 0.7;
+  }
+
+  .reauth-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 30px;
+    padding: 0 13px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--danger);
+    background: oklch(0.45 0.22 25 / 0.1);
+    color: var(--danger);
+    font-family: var(--font-ui);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
   }
 
   .edit-btn {

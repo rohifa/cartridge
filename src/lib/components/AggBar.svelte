@@ -2,6 +2,7 @@
   import ScoreBadge from './ScoreBadge.svelte';
   import Icon from './Icon.svelte';
   import { LISTDOT } from '$lib/constants.js';
+  import { totalPlaytime } from '$lib/utils.js';
   import type { Game, GameList } from '$lib/types.js';
 
   let {
@@ -13,8 +14,8 @@
   } = $props();
 
   const totalGames   = $derived(games.length);
-  const tracked      = $derived(games.filter(g => g.playtime != null));
-  const totalH       = $derived(tracked.reduce((s, g) => s + (g.playtime ?? 0), 0));
+  const tracked      = $derived(games.filter(g => totalPlaytime(g) != null));
+  const totalH       = $derived(tracked.reduce((s, g) => s + (totalPlaytime(g) ?? 0), 0));
   const rated        = $derived(games.filter(g => g.rating > 0));
   const avgRating    = $derived(rated.length ? rated.reduce((s, g) => s + g.rating, 0) / rated.length : null);
   const withMc       = $derived(games.filter(g => g.metacritic != null));

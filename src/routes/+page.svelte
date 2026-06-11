@@ -20,8 +20,9 @@
     removeAccount as apiRemoveAccount,
     createList as apiCreateList,
     savePrefs as apiSavePrefs,
+    startOAuthFlow,
   } from '$lib/api.js';
-  import { matchFilters } from '$lib/utils.js';
+  import { matchFilters, primaryCopy, totalPlaytime } from '$lib/utils.js';
   import { PLAT, ALLTAGS } from '$lib/constants.js';
   import type {
     Game, GameList, GamePatch, SidebarFilter, AppView,
@@ -61,7 +62,7 @@
 
   let selectedId        = $state<number | null>(null);
   let syncing           = $state(false);
-  let syncingId         = $state<string | null>(null);
+  let syncingIds        = $state(new Set<string>());
   let createOpen        = $state(false);
   let createFromFilters = $state(false);
   let addAccountOpen    = $state(false);
@@ -123,13 +124,14 @@
     let g = [...games];
 
     if (f.type === 'platform') {
-      g = g.filter(x => x.platform === f.value);
+      g = g.filter(x => x.copies.some(c => c.platform === f.value));
     } else if (f.type === 'fav') {
       g = g.filter(x => x.tags.includes('favourite'));
     } else if (f.type === 'never') {
-      g = g.filter(x => x.playtime == null || x.playtime === 0);
+      const playtime = (x: Game) => totalPlaytime(x);
+      g = g.filter(x => playtime(x) == null || playtime(x) === 0);
     } else if (f.type === 'recent') {
-      g = g.filter(x => x.last != null);
+      g = g.filter(x => x.copies.some(c => c.last != null));
     } else if (f.type === 'list') {
       const L = lists.find(l => l.id === f.value);
       if (L) {
@@ -152,9 +154,13 @@
 
     const cmp: Record<SortKey, (a: Game, b: Game) => number> = {
       title:      (a, b) => a.title.localeCompare(b.title),
-      playtime:   (a, b) => (b.playtime ?? 0) - (a.playtime ?? 0),
+      playtime:   (a, b) => (totalPlaytime(b) ?? 0) - (totalPlaytime(a) ?? 0),
       rating:     (a, b) => b.rating - a.rating,
-      recent:     (a, b) => (a.last ? 0 : 1) - (b.last ? 0 : 1),
+      recent:     (a, b) => {
+        const aLast = primaryCopy(a)?.last;
+        const bLast = primaryCopy(b)?.last;
+        return (aLast ? 0 : 1) - (bLast ? 0 : 1);
+      },
       metacritic: (a, b) => (b.metacritic ?? 0) - (a.metacritic ?? 0),
       opencritic: (a, b) => (b.opencritic ?? 0) - (a.opencritic ?? 0),
       userScore:  (a, b) => (b.userScore ?? 0) - (a.userScore ?? 0),
@@ -194,7 +200,8 @@
   }
 
   function launch(g: Game) {
-    toast = { title: g.title, platform: PLAT[g.platform].name };
+    const copy = primaryCopy(g);
+    toast = { title: g.title, platform: copy ? PLAT[copy.platform].name : 'Unknown' };
     apiLaunchGame(g.id).catch(() => { toast = null; });
   }
 
@@ -219,9 +226,20 @@
     syncNotifTimer = window.setTimeout(() => { syncNotif = null; }, 5000);
   }
 
+  async function reauth(platform: string) {
+    try {
+      const account = await startOAuthFlow(platform);
+      const d = await loadData();
+      accounts = d.accounts;
+      showSyncNotif(true, `Re-authenticated ${account.name} as ${account.handle}.`);
+    } catch (e) {
+      showSyncNotif(false, String(e));
+    }
+  }
+
   async function syncOne(id: string) {
-    if (syncingId) return;
-    syncingId = id;
+    if (syncingIds.has(id)) return;
+    syncingIds = new Set([...syncingIds, id]);
     try {
       const result = await apiSyncAccount(id);
       const d = await loadData();
@@ -238,9 +256,15 @@
         showSyncNotif(true, `Synced ${parts.join(', ')} game${result.added + result.updated === 1 ? '' : 's'}.`);
       }
     } catch (e) {
+      // Reload accounts so any status change written by Rust (e.g. Error after
+      // a token-refresh failure) is immediately reflected — the Re-authenticate
+      // button in Settings must appear without requiring an app restart.
+      try { const d = await loadData(); accounts = d.accounts; } catch {}
       showSyncNotif(false, String(e));
     } finally {
-      syncingId = null;
+      const next = new Set(syncingIds);
+      next.delete(id);
+      syncingIds = next;
     }
   }
 
@@ -286,7 +310,7 @@
     {#if view === 'settings'}
       <Settings
         {data}
-        {syncingId}
+        {syncingIds}
         {prefs}
         {theme}
         onSync={syncOne}
@@ -298,6 +322,7 @@
           await apiRemoveAccount(id);
           accounts = accounts.filter(a => a.id !== id);
         }}
+        onReauth={reauth}
       />
 
     {:else if selected}
@@ -419,6 +444,7 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+    min-height: 0;
   }
 
   .content-area {

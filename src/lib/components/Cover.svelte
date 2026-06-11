@@ -2,6 +2,7 @@
   import Icon from './Icon.svelte';
   import PlatformDot from './PlatformDot.svelte';
   import type { Game } from '$lib/types.js';
+  import { coverSrc, primaryCopy } from '$lib/utils.js';
 
   let {
     game,
@@ -12,6 +13,8 @@
     selected?: boolean;
     radius?: string;
   } = $props();
+
+  const copy = $derived(primaryCopy(game));
 </script>
 
 <div
@@ -23,8 +26,8 @@
       : 'var(--cover-ring), var(--shadow-sm)'};
   "
 >
-  {#if game.cover}
-    <img src="/covers/{game.cover}.png" alt="" />
+  {#if coverSrc(game)}
+    <img src={coverSrc(game)} alt="" />
   {:else}
     <div class="fallback">
       <Icon name="gamepad-2" size={22} color="var(--fg-3)" />
@@ -32,9 +35,11 @@
       <span class="fallback-sub">no cover art</span>
     </div>
   {/if}
-  <span class="plat-dot">
-    <PlatformDot platform={game.platform} />
-  </span>
+  {#if copy}
+    <span class="plat-dot">
+      <PlatformDot platform={copy.platform} />
+    </span>
+  {/if}
 </div>
 
 <style>

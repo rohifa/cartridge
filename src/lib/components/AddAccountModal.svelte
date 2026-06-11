@@ -1,8 +1,9 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import Icon from './Icon.svelte';
+  import PlatIcon from './PlatIcon.svelte';
   import { PLAT } from '$lib/constants.js';
-  import { addSteamAccount } from '$lib/api.js';
+  import { addSteamAccount, startOAuthFlow } from '$lib/api.js';
   import type { Account, Platform } from '$lib/types.js';
 
   let {
@@ -24,11 +25,20 @@
   let saving   = $state(false);
 
   async function connect() {
-    if (!apiKey.trim() || !steamId.trim()) return;
     error = '';
     saving = true;
     try {
-      const account = await addSteamAccount(apiKey.trim(), steamId.trim(), editAccount?.steamId);
+      let account: Account;
+      if (platform === 'steam') {
+        if (!apiKey.trim() || !steamId.trim()) return;
+        account = await addSteamAccount(apiKey.trim(), steamId.trim(), editAccount?.steamId);
+      } else if (platform === 'gog') {
+        account = await startOAuthFlow('gog');
+      } else if (platform === 'epic') {
+        account = await startOAuthFlow('epic');
+      } else {
+        return;
+      }
       onAdd(account);
     } catch (e) {
       error = String(e);
@@ -37,7 +47,13 @@
     }
   }
 
-  const canSubmit = $derived(apiKey.trim().length > 0 && steamId.trim().length > 0 && !saving);
+  const canSubmit = $derived(
+    !saving && (
+      platform === 'gog' ||
+      platform === 'epic' ||
+      (platform === 'steam' && apiKey.trim().length > 0 && steamId.trim().length > 0)
+    )
+  );
 </script>
 
 <div
@@ -72,7 +88,7 @@
         <span class="field-label">Platform</span>
         <div class="plat-options">
           {#each (['steam', 'gog', 'epic'] as Platform[]) as p}
-            {@const supported = p === 'steam'}
+            {@const supported = p === 'steam' || p === 'gog' || p === 'epic'}
             {@const locked   = isEdit && p !== platform}
             <button
               class="plat-btn"
@@ -80,7 +96,9 @@
               disabled={!supported || locked}
               onclick={() => { if (supported && !isEdit) platform = p; }}
             >
-              <span class="plat-dot" style="background:{PLAT[p].color}"></span>
+              <span class="plat-icon">
+                <PlatIcon platform={p} size={15} />
+              </span>
               {PLAT[p].name}
               {#if !supported && !isEdit}<span class="soon">soon</span>{/if}
             </button>
@@ -125,6 +143,28 @@
             Find it at <span class="mono">steamid.io</span> or in your profile URL
           </span>
         </label>
+      {/if}
+
+      <!-- GOG fields -->
+      {#if platform === 'gog'}
+        <div class="oauth-notice">
+          <Icon name="globe" size={14} color="var(--fg-3)" />
+          <span>
+            Clicking Connect opens GOG's login page. After signing in, Cartridge receives
+            a token and copies your library locally. No password is ever seen by Cartridge.
+          </span>
+        </div>
+      {/if}
+
+      <!-- Epic fields -->
+      {#if platform === 'epic'}
+        <div class="oauth-notice">
+          <Icon name="globe" size={14} color="var(--fg-3)" />
+          <span>
+            Clicking Connect opens Epic's login page. After signing in, Cartridge copies
+            your game library locally. Playtime is not tracked — Epic doesn't expose it.
+          </span>
+        </div>
       {/if}
 
       {#if error}
@@ -246,11 +286,13 @@
     cursor: default;
   }
 
-  .plat-dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
+  .plat-icon {
+    width: 16px;
+    height: 16px;
     flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .soon {
@@ -300,6 +342,19 @@
 
   .mono {
     font-family: var(--font-mono);
+  }
+
+  .oauth-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-3);
+    border: 1px solid var(--border-1);
+    font-size: 12px;
+    color: var(--fg-2);
+    line-height: 1.5;
   }
 
   .error-banner {

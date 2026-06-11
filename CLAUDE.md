@@ -30,24 +30,59 @@ This is a **Tauri v2** desktop app using **SvelteKit as a static site generator 
 
 ```
 cartridge/
-├── src/                    # SvelteKit frontend
-│   ├── routes/            # SvelteKit file-based routing
-│   │   ├── +layout.ts     # Root layout (prerender + ssr config)
-│   │   └── +page.svelte   # Home page
-│   └── app.html           # HTML shell
-├── src-tauri/             # Rust backend
-│   ├── src/
-│   │   ├── lib.rs         # Tauri app setup, command registration
-│   │   └── main.rs        # Entry point
-│   ├── Cargo.toml         # Rust dependencies
-│   ├── tauri.conf.json    # Tauri configuration
-│   └── capabilities/      # Tauri security capabilities
-├── static/                # Static assets (icons, images)
-├── design system/         # Complete design system documentation
-│   ├── README.md          # Design philosophy, visual foundations
-│   ├── colors_and_type.css # All design tokens
-│   └── ui_kits/           # UI component examples
-└── package.json           # Node dependencies
+├── src/
+│   ├── routes/
+│   │   ├── +layout.ts          # prerender=true, ssr=false
+│   │   └── +page.svelte        # entire app: all state, derived values, handlers
+│   ├── lib/
+│   │   ├── api.ts              # thin invoke() wrappers — no logic here
+│   │   ├── types.ts            # TypeScript interfaces mirroring Rust models
+│   │   ├── constants.ts        # PLAT, TAGCOLOR, TAGBG, LISTDOT, STATUS_META, ALLTAGS
+│   │   ├── utils.ts            # fmtHours(), matchFilters(), scoreTone(), coverSrc()
+│   │   ├── data.ts             # legacy demo data (not imported in production UI)
+│   │   └── components/
+│   │       ├── Sidebar.svelte
+│   │       ├── Toolbar.svelte
+│   │       ├── FilterPanel.svelte
+│   │       ├── AggBar.svelte
+│   │       ├── GridView.svelte
+│   │       ├── ListView.svelte
+│   │       ├── GameDetail.svelte
+│   │       ├── Settings.svelte
+│   │       ├── Cover.svelte
+│   │       ├── Icon.svelte           # lucide-svelte wrapper
+│   │       ├── PlatformDot.svelte
+│   │       ├── Stars.svelte
+│   │       ├── Tag.svelte
+│   │       ├── ScoreBadge.svelte
+│   │       ├── ScoreCluster.svelte
+│   │       ├── StatusPill.svelte
+│   │       ├── LaunchButton.svelte
+│   │       ├── LaunchToast.svelte
+│   │       ├── CreateListModal.svelte
+│   │       └── AddAccountModal.svelte
+│   └── app.html
+├── src-tauri/src/
+│   ├── lib.rs                  # plugin init, AppStore::load, all command registration
+│   ├── main.rs
+│   ├── models.rs               # Rust structs/enums — serde mirrors of types.ts
+│   ├── store.rs                # AppStore: load, atomic save, patch_game, sanitized_data
+│   └── commands/
+│       ├── mod.rs
+│       ├── data.rs             # load_data, patch_game, save_prefs, export_json
+│       ├── lists.rs            # create_list, delete_list, add_to_list, remove_from_list
+│       ├── launch.rs           # launch_game (platform deep links), open_url
+│       ├── sync.rs             # add_steam_account, sync_account, remove_account
+│       └── fs.rs               # get_library_path, reveal_in_finder
+├── static/
+│   ├── covers/                 # bundled cover art (*.png)
+│   ├── design-tokens.css
+│   └── global.css
+├── design system/              # design documentation
+│   ├── README.md
+│   ├── colors_and_type.css
+│   └── ui_kits/
+└── package.json
 ```
 
 ### Rust-Frontend Communication

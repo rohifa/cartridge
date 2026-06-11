@@ -1,30 +1,41 @@
 export type Platform = 'steam' | 'gog' | 'epic';
 export type GameStatus = 'backlog' | 'playing' | 'beaten' | 'dropped' | 'wishlist';
 
+export interface GameCopy {
+  platform: Platform;
+  appId: string;
+  accountId?: string;
+  installed: boolean;
+  playtime: number | null;
+  last: string | null;
+}
+
 export interface Game {
   id: number;
   title: string;
   cover: string | null;
-  platform: Platform;
+  
+  // User-owned, game-level data
+  rating: number;
+  status: GameStatus;
+  tags: string[];
+  note: string;
+  
+  // Store metadata (same across platforms)
   genre: string[];
   dev: string;
   year: number;
-  playtime: number | null;
-  last: string | null;
-  rating: number;
-  status: GameStatus;
-  installed: boolean;
   metacritic: number | null;
   opencritic: number | null;
   userScore: number | null;
-  tags: string[];
-  note: string;
   links: Partial<Record<'metacritic' | 'opencritic' | 'hltb' | 'store', string>>;
   custom: Array<{ k: string; v: string }>;
-  appId: string | null;
+  
+  // Platform-specific copies
+  copies: GameCopy[];
 }
 
-export type GamePatch = Partial<Omit<Game, 'id'>>;
+export type GamePatch = Partial<Omit<Game, 'id' | 'copies'>>;
 
 export interface SyncResult {
   added: number;
@@ -85,6 +96,7 @@ export type SidebarFilter =
   | { type: 'list'; value: string };
 
 export interface CartridgeData {
+  version?: number;
   accounts: Account[];
   games: Game[];
   lists: GameList[];

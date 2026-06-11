@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { PLAT, LISTDOT } from '$lib/constants.js';
+  import { LISTDOT } from '$lib/constants.js';
   import Icon from './Icon.svelte';
+  import PlatIcon from './PlatIcon.svelte';
   import type { CartridgeData, SidebarFilter, AppView, GameList, Platform } from '$lib/types.js';
+  import { totalPlaytime } from '$lib/utils.js';
 
   let {
     data,
@@ -23,7 +25,10 @@
 
   const total        = $derived(data.games.length);
   const fav          = $derived(data.games.filter(g => g.tags.includes('favourite')).length);
-  const never        = $derived(data.games.filter(g => g.playtime == null || g.playtime === 0).length);
+  const never        = $derived(data.games.filter(g => {
+    const pt = totalPlaytime(g);
+    return pt == null || pt === 0;
+  }).length);
   const isLib        = $derived(view === 'library');
   const filterValue  = $derived((filter as any).value as string | undefined);
 </script>
@@ -34,6 +39,7 @@
   count?: number | null;
   active: boolean;
   dot?: string;
+  platform?: Platform;
   kind?: string;
   onClick: () => void;
 })}
@@ -45,7 +51,11 @@
     tabindex="0"
     onkeydown={(e) => e.key === 'Enter' && opts.onClick()}
   >
-    {#if opts.dot}
+    {#if opts.platform}
+      <span class="nav-platform-icon">
+        <PlatIcon platform={opts.platform} size={15} />
+      </span>
+    {:else if opts.dot}
       <span class="nav-dot" style="background:{opts.dot}"></span>
     {:else if opts.icon}
       <Icon name={opts.icon} size={16} color={opts.active ? 'var(--accent)' : 'var(--fg-3)'} />
@@ -78,7 +88,7 @@
   <div class="section-label">Platforms</div>
   {#each data.accounts as a}
     {@render navItem({
-      dot:    PLAT[a.platform].color,
+      platform: a.platform,
       label:  a.name,
       count:  a.count,
       active: isLib && filter.type === 'platform' && filterValue === a.platform,
@@ -203,6 +213,16 @@
     border-radius: 50%;
     flex: none;
     margin-left: 1px;
+  }
+
+  .nav-platform-icon {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: currentColor;
   }
 
   .nav-label {

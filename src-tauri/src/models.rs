@@ -51,48 +51,59 @@ pub struct CustomField {
     pub v: String,
 }
 
+/// Platform-specific copy of a game (one game can have multiple store copies).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameCopy {
+    pub platform: Platform,
+    pub app_id: String,
+    #[serde(default)]
+    pub account_id: Option<String>,
+    pub installed: bool,
+    pub playtime: Option<f64>,
+    pub last: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Game {
     pub id: u64,
     pub title: String,
     pub cover: Option<String>,
-    pub platform: Platform,
+    
+    // User-owned, game-level data
+    pub rating: u8,
+    pub status: GameStatus,
+    pub tags: Vec<String>,
+    pub note: String,
+    
+    // Store metadata (same across platforms)
     pub genre: Vec<String>,
     pub dev: String,
     pub year: u32,
-    pub playtime: Option<f64>,
-    pub last: Option<String>,
-    pub rating: u8,
-    pub status: GameStatus,
-    pub installed: bool,
     pub metacritic: Option<i32>,
     pub opencritic: Option<i32>,
     pub user_score: Option<i32>,
-    pub tags: Vec<String>,
-    pub note: String,
     pub links: HashMap<String, String>,
     pub custom: Vec<CustomField>,
-    #[serde(default)]
-    pub app_id: Option<String>,
+    
+    // Platform-specific copies
+    pub copies: Vec<GameCopy>,
 }
 
-/// Partial update — only `Some` fields are applied. `api_key` is intentionally excluded.
+/// Partial update — only `Some` fields are applied.
 /// For nullable Game fields, use `Some(None)` to clear or `None` to leave unchanged.
+/// Note: copies cannot be patched via this struct; use dedicated commands for copy management.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct GamePatch {
     pub title: Option<String>,
     pub cover: Option<Option<String>>,
-    pub platform: Option<Platform>,
     pub genre: Option<Vec<String>>,
     pub dev: Option<String>,
     pub year: Option<u32>,
-    pub playtime: Option<Option<f64>>,
-    pub last: Option<Option<String>>,
     pub rating: Option<u8>,
     pub status: Option<GameStatus>,
-    pub installed: Option<bool>,
     pub metacritic: Option<Option<i32>>,
     pub opencritic: Option<Option<i32>>,
     pub user_score: Option<Option<i32>>,
@@ -100,11 +111,11 @@ pub struct GamePatch {
     pub note: Option<String>,
     pub links: Option<HashMap<String, String>>,
     pub custom: Option<Vec<CustomField>>,
-    pub app_id: Option<Option<String>>,
 }
 
 /// Stored in library.json and returned to the frontend.
-/// `api_key` is never serialized in Tauri command responses — use `AppStore::sanitized_data()`.
+/// Credential fields (`api_key`, `access_token`, `refresh_token`) are stripped by
+/// `AppStore::sanitized_data()` before any data is returned to the frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Account {
@@ -115,9 +126,18 @@ pub struct Account {
     pub count: u32,
     pub synced: String,
     pub status: AccountStatus,
-    /// Stored on disk for sync calls; stripped before returning to the frontend.
     #[serde(default)]
     pub api_key: Option<String>,
+    #[serde(default)]
+    pub access_token: Option<String>,
+    #[serde(default)]
+    pub refresh_token: Option<String>,
+    /// Unix timestamp when the access token expires.
+    #[serde(default)]
+    pub expires_at: Option<i64>,
+    /// Serialized `egs_api::UserData` JSON for Epic Games accounts.
+    #[serde(default)]
+    pub egs_session: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -185,6 +205,8 @@ pub struct StatusMeta {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CartridgeData {
+    #[serde(default)]
+    pub version: u32,
     pub accounts: Vec<Account>,
     pub games: Vec<Game>,
     pub lists: Vec<GameList>,

@@ -29,6 +29,7 @@ pub fn run() {
             commands::launch::launch_game,
             commands::launch::open_url,
             commands::sync::add_steam_account,
+            commands::sync::start_oauth_flow,
             commands::sync::sync_account,
             commands::sync::remove_account,
             commands::fs::get_library_path,
