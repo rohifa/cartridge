@@ -96,9 +96,20 @@ fn absorb_game(primary: &mut Game, other: Game) {
     if primary.genre.is_empty()     { primary.genre = other.genre; }
     if primary.dev.is_empty()       { primary.dev = other.dev; }
     if primary.year == 0            { primary.year = other.year; }
-    if primary.metacritic.is_none() { primary.metacritic = other.metacritic; }
+    if primary.steam_match.is_none() && !primary.steam_match_manual {
+        primary.steam_match = other.steam_match;
+        primary.steam_match_checked_at = other.steam_match_checked_at;
+        primary.steam_match_manual = other.steam_match_manual;
+    }
+    if primary.metacritic.is_none() {
+        primary.metacritic = other.metacritic;
+        primary.metacritic_checked_at = other.metacritic_checked_at;
+    }
     if primary.opencritic.is_none() { primary.opencritic = other.opencritic; }
-    if primary.user_score.is_none() { primary.user_score = other.user_score; }
+    if primary.user_score_reviews.is_none() {
+        primary.user_score = other.user_score;
+        primary.user_score_reviews = other.user_score_reviews;
+    }
     for (k, v) in other.links {
         primary.links.entry(k).or_insert(v);
     }
@@ -312,7 +323,7 @@ pub async fn add_steam_account(
 }
 
 #[tauri::command]
-pub async fn sync_account(state: Db<'_>, account_id: String) -> Result<SyncResult, String> {
+pub async fn sync_account(app: AppHandle, state: Db<'_>, account_id: String) -> Result<SyncResult, String> {
     let (platform, api_key) = {
         let store = state.lock().unwrap();
         let account = store
@@ -324,11 +335,16 @@ pub async fn sync_account(state: Db<'_>, account_id: String) -> Result<SyncResul
         (account.platform.clone(), account.api_key.clone())
     };
 
-    match platform {
+    let result = match platform {
         Platform::Steam => sync_steam(state, api_key, account_id).await,
         Platform::Gog   => sync_gog(state, account_id).await,
         Platform::Epic  => sync_epic(state, account_id).await,
-    }
+    };
+    // Paced background job: title matching for new GOG/Epic games, reviews,
+    // Metacritic. Starts after covers so the two don't compete for the store
+    // API's rate limit (the cover fallback uses appdetails too).
+    crate::commands::scores::spawn_score_refresh(app);
+    result
 }
 
 async fn sync_steam(
@@ -413,7 +429,7 @@ async fn sync_steam(
                         year: 0,
                         metacritic: None,
                         opencritic: None,
-                        user_score: None,
+                        user_score: None, user_score_reviews: None, metacritic_checked_at: None, steam_match: None, steam_match_checked_at: None, steam_match_manual: false,
                         links: Default::default(),
                         custom: vec![],
                         copies: vec![GameCopy {
@@ -443,9 +459,15 @@ async fn sync_steam(
         store.covers_dir.clone()
     }; // lock released here
 
-    // Download cover art (async, no lock held)
     let mut errors: Vec<String> = Vec::new();
     let client = reqwest::Client::new();
+
+    // Review scores: a few batched requests, so done before the slower covers.
+    if let Err(e) = crate::commands::scores::refresh_steam_reviews(state.inner(), &client).await {
+        errors.push(format!("Steam review scores: {e:#}"));
+    }
+
+    // Download cover art (async, no lock held)
 
     for sg in &steam_games {
         let cover_path = covers_dir.join(format!("{}.jpg", sg.appid));
@@ -941,7 +963,7 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
                         year,
                         metacritic: None,
                         opencritic: None,
-                        user_score: None,
+                        user_score: None, user_score_reviews: None, metacritic_checked_at: None, steam_match: None, steam_match_checked_at: None, steam_match_manual: false,
                         links: Default::default(),
                         custom: vec![],
                         copies: vec![GameCopy {
@@ -1468,7 +1490,7 @@ async fn sync_gog(state: Db<'_>, account_id: String) -> Result<SyncResult, Strin
                         year,
                         metacritic: None,
                         opencritic: None,
-                        user_score: None,
+                        user_score: None, user_score_reviews: None, metacritic_checked_at: None, steam_match: None, steam_match_checked_at: None, steam_match_manual: false,
                         links: Default::default(),
                         custom: vec![],
                         copies: vec![GameCopy {
@@ -1550,7 +1572,7 @@ mod tests {
         Game {
             id, title: title.into(), cover: None, rating: 0, status: GameStatus::Backlog,
             tags: vec![], note: String::new(), genre: vec![], dev: String::new(), year: 0,
-            metacritic: None, opencritic: None, user_score: None,
+            metacritic: None, opencritic: None, user_score: None, user_score_reviews: None, metacritic_checked_at: None, steam_match: None, steam_match_checked_at: None, steam_match_manual: false,
             links: Default::default(), custom: vec![],
             copies: vec![GameCopy {
                 platform, app_id: app_id.into(), account_id: None,

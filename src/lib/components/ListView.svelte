@@ -22,7 +22,7 @@
   } = $props();
 
   const cols = $derived(showScores
-    ? '30px 1fr 116px 92px 40px 40px 40px 56px 112px'
+    ? '30px 1fr 116px 92px 40px 40px 56px 112px'
     : '30px 1fr 1fr 110px 56px 112px');
 </script>
 
@@ -35,8 +35,7 @@
     <span>Status</span>
     {#if showScores}
       <span class="center">MC</span>
-      <span class="center">OC</span>
-      <span class="center">USR</span>
+      <span class="center">Steam</span>
     {/if}
     <span class="right">Hours</span>
     <span></span>
@@ -90,8 +89,7 @@
       <!-- Score badges (conditional) -->
       {#if showScores}
         <span class="center"><ScoreBadge value={g.metacritic} size="sm" /></span>
-        <span class="center"><ScoreBadge value={g.opencritic} size="sm" /></span>
-        <span class="center"><ScoreBadge value={g.userScore}  size="sm" /></span>
+        <span class="center"><ScoreBadge value={g.userScore}  size="sm" unit="%" /></span>
       {/if}
 
       <!-- Playtime -->

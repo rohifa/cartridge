@@ -4,9 +4,11 @@
   let {
     value,
     size = 'md',
+    unit = '',
   }: {
     value: number | null;
     size?: 'sm' | 'md' | 'lg';
+    unit?: string;
   } = $props();
 
   const dim = $derived(size === 'lg' ? 40 : size === 'sm' ? 26 : 32);
@@ -15,8 +17,10 @@
 </script>
 
 <span style="
-  width: {dim}px;
+  min-width: {dim}px;
   height: {dim}px;
+  padding: 0 3px;
+  box-sizing: border-box;
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -30,5 +34,5 @@
   font-size: {fs}px;
   font-feature-settings: 'tnum' 1;
 ">
-  {value == null ? '–' : value}
+  {value == null ? '–' : value}{#if unit && value != null}<span style="font-size:0.7em; font-weight:600; opacity:0.85; margin-left:1px">{unit}</span>{/if}
 </span>

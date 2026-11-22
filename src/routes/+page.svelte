@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { listen } from '@tauri-apps/api/event';
   import Sidebar from '$lib/components/Sidebar.svelte';
   import Toolbar from '$lib/components/Toolbar.svelte';
   import FilterPanel from '$lib/components/FilterPanel.svelte';
@@ -21,15 +22,19 @@
     createList as apiCreateList,
     savePrefs as apiSavePrefs,
     startOAuthFlow,
+    startScoreRefresh,
+    setSteamMatch,
+    rejectSteamMatch,
+    autoSteamMatch,
   } from '$lib/api.js';
   import { matchFilters, primaryCopy, totalPlaytime } from '$lib/utils.js';
   import { PLAT, ALLTAGS } from '$lib/constants.js';
   import type {
     Game, GameList, GamePatch, SidebarFilter, AppView,
-    Filters, Prefs, ListColor, ListKind, Account, CartridgeData, Platform,
+    Filters, Prefs, ListColor, ListKind, Account, CartridgeData, Platform, SteamMatchAction,
   } from '$lib/types.js';
 
-  type SortKey = 'title' | 'playtime' | 'recent' | 'rating' | 'metacritic' | 'opencritic' | 'userScore' | 'year';
+  type SortKey = 'title' | 'playtime' | 'recent' | 'rating' | 'metacritic' | 'userScore' | 'year';
 
   // ── localStorage — theme only (prefs now persisted in Rust) ──────────────
   function lsGet<T>(key: string, def: T): T {
@@ -71,6 +76,15 @@
   let syncNotif         = $state<{ ok: boolean; message: string } | null>(null);
   let syncNotifTimer    = 0;
 
+  // Background score refreshes in Rust push single-game updates.
+  onMount(() => {
+    const unlisten = listen<Game[]>('games-updated', (e) => {
+      const byId = new Map(e.payload.map(g => [g.id, g]));
+      games = games.map(g => byId.get(g.id) ?? g);
+    });
+    return () => { unlisten.then(f => f()); };
+  });
+
   // ── Boot — load persisted state from Rust ─────────────────────────────────
   onMount(async () => {
     try {
@@ -83,6 +97,8 @@
       prefs    = d.prefs;
       viewMode = d.prefs.defaultView;
       filters  = emptyFilters(); // now yearBounds is correct
+      // Only does work for games never checked or due a recheck.
+      startScoreRefresh().catch(e => console.error('score refresh failed:', e));
     } catch (e) {
       console.error('loadData failed:', e);
     }
@@ -114,7 +130,6 @@
     let n = filters.genres.length + filters.platforms.length + filters.statuses.length;
     if (filters.yearLo > yearBounds[0] || filters.yearHi < yearBounds[1]) n++;
     if (filters.mcMin)  n++;
-    if (filters.ocMin)  n++;
     if (filters.usrMin) n++;
     return n;
   });
@@ -162,7 +177,6 @@
         return (aLast ? 0 : 1) - (bLast ? 0 : 1);
       },
       metacritic: (a, b) => (b.metacritic ?? 0) - (a.metacritic ?? 0),
-      opencritic: (a, b) => (b.opencritic ?? 0) - (a.opencritic ?? 0),
       userScore:  (a, b) => (b.userScore ?? 0) - (a.userScore ?? 0),
       year:       (a, b) => b.year - a.year,
     };
@@ -191,6 +205,15 @@
   // ── Handlers — all mutations go through Rust ──────────────────────────────
   async function patch(id: number, fields: GamePatch) {
     const updated = await apiPatchGame(id, fields);
+    games = games.map(g => g.id === id ? updated : g);
+  }
+
+  /// Throws on failure (e.g. a bad link) so GameDetail can show the message.
+  async function steamMatch(id: number, action: SteamMatchAction) {
+    const updated =
+      action.kind === 'set'    ? await setSteamMatch(id, action.input) :
+      action.kind === 'reject' ? await rejectSteamMatch(id) :
+                                 await autoSteamMatch(id);
     games = games.map(g => g.id === id ? updated : g);
   }
 
@@ -332,6 +355,7 @@
         game={selected}
         onBack={() => { selectedId = null; }}
         onPatch={patch}
+        onSteamMatch={steamMatch}
         onAddTag={addTag}
         onLaunch={launch}
       />

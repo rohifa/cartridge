@@ -6,6 +6,14 @@ export function fmtHours(h: number | null): string {
   return h.toFixed(1).replace(/\.0$/, '') + ' h';
 }
 
+/// Caption under the Steam score: review count, or why there is no percentage.
+export function fmtReviews(count: number | null | undefined, score: number | null): string | null {
+  if (count == null) return null;
+  if (count === 0)   return 'No reviews';
+  if (score == null) return 'Not enough reviews';
+  return `${count.toLocaleString('en-US')} reviews`;
+}
+
 export function scoreTone(v: number | null): { fg: string; bg: string; bd: string } {
   if (v == null) return { fg: 'var(--fg-3)', bg: 'var(--bg-3)', bd: 'var(--border-1)' };
   if (v >= 75)   return { fg: 'oklch(0.96 0.02 150)', bg: 'oklch(0.55 0.15 150)', bd: 'transparent' };
@@ -61,7 +69,6 @@ export function matchFilters(g: Game, f: Partial<Filters> | null | undefined): b
   if (f.yearLo != null    && g.year > 0 && g.year < f.yearLo)                       return false;
   if (f.yearHi != null    && g.year > 0 && g.year > f.yearHi)                       return false;
   if (f.mcMin  && (g.metacritic == null  || g.metacritic  < f.mcMin))               return false;
-  if (f.ocMin  && (g.opencritic == null  || g.opencritic  < f.ocMin))               return false;
   if (f.usrMin && (g.userScore  == null  || g.userScore   < f.usrMin))              return false;
   const playtime = totalPlaytime(g);
   if (f.playtimeMax != null && !(playtime != null && playtime <= f.playtimeMax))    return false;

@@ -144,13 +144,12 @@
     <div class="field">
       <div class="score-sliders">
         {#each [
-          { key: 'mcMin' as const,  label: 'Metacritic', val: filters.mcMin  },
-          { key: 'ocMin' as const,  label: 'OpenCritic', val: filters.ocMin  },
-          { key: 'usrMin' as const, label: 'User score',  val: filters.usrMin },
+          { key: 'mcMin' as const,  label: 'Metacritic', val: filters.mcMin, unit: ''  },
+          { key: 'usrMin' as const, label: 'Steam reviews', val: filters.usrMin, unit: '%' },
         ] as row}
           <div class="score-row">
             <div class="score-row-head">
-              <ScoreBadge value={row.val === 0 ? null : row.val} size="sm" />
+              <ScoreBadge value={row.val === 0 ? null : row.val} size="sm" unit={row.unit} />
               <span class="score-label">{row.label}</span>
             </div>
             <div class="min-slider">
@@ -165,7 +164,7 @@
                   onSetFilters((f) => ({ ...f, [row.key]: v }));
                 }}
               />
-              <span class="mono slider-val">{row.val === 0 ? 'any' : row.val + '+'}</span>
+              <span class="mono slider-val">{row.val === 0 ? 'any' : row.val + row.unit + '+'}</span>
             </div>
           </div>
         {/each}

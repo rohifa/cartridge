@@ -181,7 +181,7 @@
         <div class="pref-row">
           <div class="pref-text">
             <div class="pref-label">Show critic scores</div>
-            <div class="pref-desc">Metacritic, OpenCritic and user-score badges in lists.</div>
+            <div class="pref-desc">Metacritic and Steam review badges in lists.</div>
           </div>
           <button
             class="toggle"

@@ -8,28 +8,65 @@
   import Icon from './Icon.svelte';
   import PlatIcon from './PlatIcon.svelte';
   import { PLAT, STATUS_META, SCORE_SOURCES } from '$lib/constants.js';
-  import { fmtHours, primaryCopy, totalPlaytime } from '$lib/utils.js';
-  import type { Game } from '$lib/types.js';
+  import { fmtHours, fmtReviews, primaryCopy, totalPlaytime } from '$lib/utils.js';
+  import type { Game, SteamMatchAction } from '$lib/types.js';
 
   let {
     game,
     onBack,
     onPatch,
+    onSteamMatch,
     onAddTag,
     onLaunch,
   }: {
     game: Game;
     onBack: () => void;
     onPatch: (id: number, delta: Partial<Game>) => void;
+    onSteamMatch: (id: number, action: SteamMatchAction) => Promise<void>;
     onAddTag: (g: Game) => void;
     onLaunch: (g: Game) => void;
   } = $props();
 
   const primary = $derived(primaryCopy(game));
 
+  // ── Steam match (games with no Steam copy take Steam scores from a match) ──
+  const hasSteamCopy = $derived(game.copies.some(c => c.platform === 'steam'));
+  let matchEditing = $state(false);
+  let matchInput   = $state('');
+  let matchError   = $state('');
+  let matchBusy    = $state(false);
+
+  // Reset the editor when another game is shown — not when the same game is
+  // replaced by an update (background score events would close it mid-typing).
+  let matchForId: number | null = null;
+  $effect(() => {
+    const id = game.id;
+    if (matchForId !== null && id !== matchForId) {
+      matchEditing = false;
+      matchInput = '';
+      matchError = '';
+    }
+    matchForId = id;
+  });
+
+  async function runMatch(action: SteamMatchAction) {
+    matchBusy = true;
+    matchError = '';
+    try {
+      await onSteamMatch(game.id, action);
+      matchEditing = false;
+      matchInput = '';
+    } catch (e) {
+      matchError = String(e);
+    } finally {
+      matchBusy = false;
+    }
+  }
+
+  function focusOnMount(node: HTMLElement) { node.focus(); }
+
   const LINK_DEFS = [
     { key: 'metacritic' as const, label: 'Metacritic',    icon: 'square-m', ph: 'https://metacritic.com/game/…'    },
-    { key: 'opencritic' as const, label: 'OpenCritic',    icon: 'square-o', ph: 'https://opencritic.com/game/…'    },
     { key: 'hltb'       as const, label: 'HowLongToBeat', icon: 'timer',    ph: 'https://howlongtobeat.com/game/…' },
     { key: 'store'      as const, label: 'Store page',    icon: 'store',    ph: 'https://store…'                   },
   ];
@@ -119,8 +156,12 @@
           <div class="score-tiles">
             {#each SCORE_SOURCES as src}
               <div class="score-tile">
-                <ScoreBadge value={game[src.key]} size="lg" />
+                <ScoreBadge value={game[src.key]} size="lg" unit={src.unit} />
                 <span class="score-label">{src.label}</span>
+                {#if src.key === 'userScore'}
+                  {@const caption = fmtReviews(game.userScoreReviews, game.userScore)}
+                  {#if caption}<span class="score-sub">{caption}</span>{/if}
+                {/if}
               </div>
             {/each}
             <div class="score-tile">
@@ -128,6 +169,55 @@
               <span class="score-label">Hours</span>
             </div>
           </div>
+          {#if !hasSteamCopy}
+            <div class="steam-match">
+              {#if matchEditing}
+                <form class="match-form" onsubmit={(e) => { e.preventDefault(); runMatch({ kind: 'set', input: matchInput }); }}>
+                  <input
+                    class="match-input"
+                    type="text"
+                    placeholder="Steam store link or app ID"
+                    bind:value={matchInput}
+                    use:focusOnMount
+                    onkeydown={(e) => { if (e.key === 'Escape') { matchEditing = false; matchError = ''; } }}
+                  />
+                  <button class="match-btn" type="submit" disabled={matchBusy || !matchInput.trim()}>
+                    {matchBusy ? 'Checking…' : 'Use'}
+                  </button>
+                  <button class="match-link muted" type="button" onclick={() => { matchEditing = false; matchError = ''; }}>
+                    Cancel
+                  </button>
+                </form>
+              {:else}
+                <span class="match-text">
+                  {#if game.steamMatch}
+                    Steam scores from <span class="match-name">{game.steamMatch.name}</span>
+                    · {game.steamMatchManual ? 'set by you' : 'matched by title'}
+                  {:else if game.steamMatchManual}
+                    No Steam match
+                  {:else if game.steamMatchCheckedAt}
+                    Not found on Steam
+                  {:else}
+                    Not matched on Steam yet
+                  {/if}
+                </span>
+                <span class="match-actions">
+                  {#if game.steamMatch}
+                    <button class="match-link" disabled={matchBusy} onclick={() => runMatch({ kind: 'reject' })}>Not this game</button>
+                  {/if}
+                  <button class="match-link" disabled={matchBusy} onclick={() => { matchEditing = true; matchError = ''; }}>
+                    {game.steamMatch ? 'Change' : 'Add Steam link'}
+                  </button>
+                  {#if game.steamMatchManual}
+                    <button class="match-link" disabled={matchBusy} onclick={() => runMatch({ kind: 'auto' })}>Match automatically</button>
+                  {/if}
+                </span>
+              {/if}
+              {#if matchError}
+                <div class="match-error">{matchError}</div>
+              {/if}
+            </div>
+          {/if}
 
           <!-- Owned on section -->
           {#if game.copies.length > 0}
@@ -496,6 +586,86 @@
     font-size: 11px;
     font-weight: 600;
     color: var(--fg-2);
+  }
+
+  /* ── Steam match ── */
+  .steam-match {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 12px;
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--fg-3);
+  }
+
+  .match-name { color: var(--fg-2); }
+
+  .match-actions {
+    display: inline-flex;
+    gap: 12px;
+  }
+
+  .match-link {
+    border: none;
+    background: transparent;
+    padding: 0;
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent);
+    cursor: pointer;
+  }
+  .match-link:hover:not(:disabled) { text-decoration: underline; }
+  .match-link:disabled { color: var(--fg-3); cursor: default; }
+  .match-link.muted { color: var(--fg-2); }
+
+  .match-form {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .match-input {
+    flex: 1;
+    min-width: 0;
+    padding: 5px 8px;
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-sm);
+    background: var(--bg-2);
+    color: var(--fg-1);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    outline: none;
+  }
+  .match-input:focus { border-color: var(--accent); }
+  .match-input::placeholder { color: var(--fg-3); }
+
+  .match-btn {
+    padding: 5px 12px;
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-sm);
+    background: var(--bg-3);
+    color: var(--fg-1);
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .match-btn:disabled { color: var(--fg-3); cursor: default; }
+
+  .match-error {
+    width: 100%;
+    color: var(--danger);
+  }
+
+  .score-sub {
+    margin-top: -3px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--fg-3);
+    font-feature-settings: 'tnum' 1;
   }
 
   /* ── Owned on section ── */

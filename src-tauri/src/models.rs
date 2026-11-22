@@ -51,6 +51,14 @@ pub struct CustomField {
     pub v: String,
 }
 
+/// A Steam app found by title search for a game owned elsewhere.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SteamMatch {
+    pub appid: u64,
+    /// Steam's name for it, shown so a wrong match is easy to spot.
+    pub name: String,
+}
+
 /// Platform-specific copy of a game (one game can have multiple store copies).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,8 +90,26 @@ pub struct Game {
     pub dev: String,
     pub year: u32,
     pub metacritic: Option<i32>,
+    /// Unix time of the last Metacritic check via Steam (None = never).
+    #[serde(default)]
+    pub metacritic_checked_at: Option<i64>,
     pub opencritic: Option<i32>,
     pub user_score: Option<i32>,
+    /// Number of Steam reviews behind `user_score` (None = never fetched).
+    #[serde(default)]
+    pub user_score_reviews: Option<u32>,
+    /// Steam app matched by title, for games with no Steam copy: their Steam
+    /// scores come from here. Not an owned copy — never launched or synced.
+    #[serde(default)]
+    pub steam_match: Option<SteamMatch>,
+    /// Unix time of the last title search (None = never), so titles with no
+    /// match aren't searched again on every run.
+    #[serde(default)]
+    pub steam_match_checked_at: Option<i64>,
+    /// The user decided this game's Steam match — set by link, or rejected
+    /// with "Not this game" (match None). Automatic matching leaves it alone.
+    #[serde(default)]
+    pub steam_match_manual: bool,
     pub links: HashMap<String, String>,
     pub custom: Vec<CustomField>,
     
