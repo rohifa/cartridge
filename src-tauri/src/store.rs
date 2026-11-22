@@ -1,4 +1,5 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use tauri::{AppHandle, Manager};
@@ -25,28 +26,7 @@ impl AppStore {
         let covers_dir = app_dir.join("covers");
         std::fs::create_dir_all(&covers_dir).ok();
 
-        let (mut data, first_run) = if path.exists() {
-            let json_str = std::fs::read_to_string(&path).ok();
-            let data = json_str
-                .and_then(|s| {
-                    // Try to parse as JSON Value first to check version
-                    let value: serde_json::Value = serde_json::from_str(&s).ok()?;
-                    let version = value.get("version").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-
-                    if version == 0 {
-                        // Old format - need migration
-                        eprintln!("[Store] Detected v0 library.json, migrating to v1...");
-                        Self::migrate_v0_to_v1(value).ok()
-                    } else {
-                        // Current format
-                        serde_json::from_value(value).ok()
-                    }
-                })
-                .unwrap_or_else(Self::empty_data);
-            (data, false)
-        } else {
-            (Self::empty_data(), true)
-        };
+        let (mut data, first_run) = Self::read_library(&path);
 
         // Ensure version is set
         if data.version == 0 {
@@ -65,6 +45,64 @@ impl AppStore {
         }
 
         store
+    }
+
+    /// Reads the library at `path`. Returns `(data, first_run)`.
+    ///
+    /// If the file exists but can't be read, parsed or migrated, the error is
+    /// logged and the file is renamed to `library.corrupt-<unix secs>.json` next
+    /// to it before falling back to empty data, so the next save can't
+    /// overwrite the user's real library.
+    fn read_library(path: &Path) -> (CartridgeData, bool) {
+        if !path.exists() {
+            return (Self::empty_data(), true);
+        }
+
+        let parsed = std::fs::read_to_string(path)
+            .context("could not read file")
+            .and_then(|s| Self::parse_library(&s));
+
+        match parsed {
+            Ok(data) => (data, false),
+            Err(e) => {
+                eprintln!("[Store] Could not load {}: {e:#}", path.display());
+                Self::backup_unreadable(path);
+                (Self::empty_data(), false)
+            }
+        }
+    }
+
+    fn parse_library(s: &str) -> anyhow::Result<CartridgeData> {
+        // Parse as a JSON Value first to check the version
+        let value: serde_json::Value = serde_json::from_str(s).context("not valid JSON")?;
+        let version = value.get("version").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+
+        if version == 0 {
+            // Old format - need migration
+            eprintln!("[Store] Detected v0 library.json, migrating to v1...");
+            Self::migrate_v0_to_v1(value)
+        } else {
+            // Current format
+            serde_json::from_value(value).context("does not match the current format")
+        }
+    }
+
+    /// Moves an unreadable library aside as `library.corrupt-<unix secs>.json`.
+    /// A failed rename is logged; loading continues with empty data either way.
+    fn backup_unreadable(path: &Path) {
+        let secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let backup = path.with_file_name(format!("library.corrupt-{secs}.json"));
+        match std::fs::rename(path, &backup) {
+            Ok(()) => eprintln!("[Store] Moved unreadable library to {}", backup.display()),
+            Err(e) => eprintln!(
+                "[Store] Could not back up {} to {}: {e}",
+                path.display(),
+                backup.display()
+            ),
+        }
     }
 
     /// Migrate v0 (old single-platform format) to v1 (multi-platform copies format)
@@ -240,5 +278,100 @@ impl AppStore {
             account.egs_session = None;
         }
         data
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A fresh, empty directory under the system temp dir.
+    fn temp_dir(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "cartridge-store-{name}-{}-{nanos}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn backups(dir: &Path) -> Vec<PathBuf> {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with("library.corrupt-") && n.ends_with(".json"))
+            })
+            .collect()
+    }
+
+    fn assert_backed_up(name: &str, contents: &str) {
+        let dir = temp_dir(name);
+        let path = dir.join("library.json");
+        std::fs::write(&path, contents).unwrap();
+
+        let (data, first_run) = AppStore::read_library(&path);
+
+        assert!(!first_run);
+        assert!(data.games.is_empty());
+        assert_eq!(data.version, 1);
+        assert!(
+            !path.exists(),
+            "unreadable library.json should be moved aside"
+        );
+        let found = backups(&dir);
+        assert_eq!(found.len(), 1, "expected one backup, found {found:?}");
+        assert_eq!(std::fs::read_to_string(&found[0]).unwrap(), contents);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn invalid_json_is_backed_up() {
+        assert_backed_up("invalid", "{ not json");
+    }
+
+    #[test]
+    fn wrong_shape_is_backed_up() {
+        assert_backed_up("shape", r#"{"version":1,"games":"oops"}"#);
+    }
+
+    #[test]
+    fn valid_json_loads_without_backup() {
+        let dir = temp_dir("valid");
+        let path = dir.join("library.json");
+        let mut original = AppStore::empty_data();
+        original.genres = vec!["Puzzle".into()];
+        std::fs::write(&path, serde_json::to_string(&original).unwrap()).unwrap();
+
+        let (data, first_run) = AppStore::read_library(&path);
+
+        assert!(!first_run);
+        assert_eq!(data.genres, vec!["Puzzle".to_string()]);
+        assert_eq!(data.statuses.len(), original.statuses.len());
+        assert!(path.exists());
+        assert!(backups(&dir).is_empty());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn missing_file_is_first_run() {
+        let dir = temp_dir("missing");
+        let path = dir.join("library.json");
+
+        let (data, first_run) = AppStore::read_library(&path);
+
+        assert!(first_run);
+        assert!(data.games.is_empty());
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
