@@ -37,9 +37,8 @@ cartridge/
 │   ├── lib/
 │   │   ├── api.ts              # thin invoke() wrappers — no logic here
 │   │   ├── types.ts            # TypeScript interfaces mirroring Rust models
-│   │   ├── constants.ts        # PLAT, TAGCOLOR, TAGBG, LISTDOT, STATUS_META, ALLTAGS
-│   │   ├── utils.ts            # fmtHours(), matchFilters(), scoreTone(), coverSrc()
-│   │   ├── data.ts             # legacy demo data (not imported in production UI)
+│   │   ├── constants.ts        # PLAT, TAGCOLOR, TAGBG, LISTDOT, STATUS_META, SCORE_SOURCES, ALLTAGS
+│   │   ├── utils.ts            # fmtHours(), fmtReviews(), matchFilters(), scoreTone(), coverSrc(), primaryCopy()
 │   │   └── components/
 │   │       ├── Sidebar.svelte
 │   │       ├── Toolbar.svelte
@@ -52,10 +51,11 @@ cartridge/
 │   │       ├── Cover.svelte
 │   │       ├── Icon.svelte           # lucide-svelte wrapper
 │   │       ├── PlatformDot.svelte
+│   │       ├── PlatIcon.svelte
 │   │       ├── Stars.svelte
 │   │       ├── Tag.svelte
-│   │       ├── ScoreBadge.svelte
-│   │       ├── ScoreCluster.svelte
+│   │       ├── ScoreBadge.svelte     # 0–100 badge, optional unit ("%")
+│   │       ├── ScoreCluster.svelte   # Metacritic + Steam reviews badges
 │   │       ├── StatusPill.svelte
 │   │       ├── LaunchButton.svelte
 │   │       ├── LaunchToast.svelte
@@ -72,7 +72,9 @@ cartridge/
 │       ├── data.rs             # load_data, patch_game, save_prefs, export_json
 │       ├── lists.rs            # create_list, delete_list, add_to_list, remove_from_list
 │       ├── launch.rs           # launch_game (platform deep links), open_url
-│       ├── sync.rs             # add_steam_account, sync_account, remove_account
+│       ├── sync.rs             # add_steam_account, start_oauth_flow, sync_account, remove_account;
+│       │                       #   cross-platform duplicate merging
+│       ├── scores.rs           # Steam reviews + Metacritic, title matching, background score job
 │       └── fs.rs               # get_library_path, reveal_in_finder
 ├── static/
 │   ├── covers/                 # bundled cover art (*.png)
@@ -90,6 +92,7 @@ cartridge/
 - **Commands**: Rust functions decorated with `#[tauri::command]` in `src-tauri/src/lib.rs`
 - **Invocation**: Frontend calls commands via `invoke("command_name", { args })`
 - **Registration**: Commands must be registered in `tauri::generate_handler![...]` in `lib.rs`
+- **Events (Rust → frontend)**: background work pushes updates with `app.emit(...)`; `+page.svelte` subscribes with `listen()` from `@tauri-apps/api/event`. Currently one event: `games-updated` (payload `Game[]`, full updated entries, replaced by id)
 
 Example:
 ```rust
@@ -108,6 +111,16 @@ fn greet(name: &str) -> String {
 import { invoke } from "@tauri-apps/api/core";
 const result = await invoke("greet", { name: "World" });
 ```
+
+## Scores
+
+Per-game scores come from Steam, without API keys. Everything lives in `src-tauri/src/commands/scores.rs`; its module doc lists the endpoints.
+
+- **Fields**: `userScore` = Steam reviews, % positive (`userScoreReviews` = review count; no % below 10 reviews). `metacritic` = Metascore via Steam `appdetails`. `opencritic` is kept in the model but has no source and is not shown anywhere.
+- **Which Steam app**: owned Steam copies first. Games owned only on GOG/Epic use `steamMatch`, found by title search (`pick_match`) or set by the user from a pasted Steam link. `steamMatchManual` marks user decisions, including "Not this game". Automatic matching never touches those.
+- **Background job** (`spawn_score_refresh`): runs on app start (`start_score_refresh`) and after every `sync_account`, in three phases: title matching (1 search/s), reviews (batched `GetItems`), Metacritic (1 app per 1.6 s, rechecked every 30 days). It is rate-limit aware, resumable through the `*_checked_at` fields, and emits `games-updated`.
+- **Matching rules**: prefer no score over a wrong one. When you change the rules in `pick_match` / `strip_edition`, bump `MATCHER_REV` so unmatched games are searched again, and add cases to the unit tests. `cargo test -- --ignored live_` runs a few cases against the real Steam API.
+- **Steam search limits**: every Steam search endpoint only indexes games currently for sale. Delisted games can't be found by title, but `GetItems` still returns their reviews by app ID; for those the user pastes a link.
 
 ## Development Commands
 
@@ -201,7 +214,7 @@ Key settings in `src-tauri/tauri.conf.json`:
 - **Identifier**: `com.cartridge.app`
 - **Dev URL**: `http://localhost:1420`
 - **Frontend Dist**: `../build` (SvelteKit output)
-- **Window**: 800x600 default size
+- **Window**: 1200x800 default size
 
 ## File-Based Routing
 
