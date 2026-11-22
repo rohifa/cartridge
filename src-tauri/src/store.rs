@@ -13,8 +13,11 @@ pub struct AppStore {
 
 impl AppStore {
     pub fn load(app: &AppHandle) -> Self {
-        let base = dirs::data_dir()
-            .unwrap_or_else(|| app.path().app_data_dir().unwrap_or_else(|_| PathBuf::from(".")));
+        let base = dirs::data_dir().unwrap_or_else(|| {
+            app.path()
+                .app_data_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+        });
         let app_dir = base.join("com.cartridge.app");
         std::fs::create_dir_all(&app_dir).ok();
 
@@ -29,7 +32,7 @@ impl AppStore {
                     // Try to parse as JSON Value first to check version
                     let value: serde_json::Value = serde_json::from_str(&s).ok()?;
                     let version = value.get("version").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                    
+
                     if version == 0 {
                         // Old format - need migration
                         eprintln!("[Store] Detected v0 library.json, migrating to v1...");
@@ -50,7 +53,11 @@ impl AppStore {
             data.version = 1;
         }
 
-        let store = Self { data, path, covers_dir };
+        let store = Self {
+            data,
+            path,
+            covers_dir,
+        };
 
         // Persist immediately so subsequent boots don't re-seed
         if first_run {
@@ -63,7 +70,8 @@ impl AppStore {
     /// Migrate v0 (old single-platform format) to v1 (multi-platform copies format)
     fn migrate_v0_to_v1(mut value: serde_json::Value) -> anyhow::Result<CartridgeData> {
         // Extract games array
-        let games_array = value.get_mut("games")
+        let games_array = value
+            .get_mut("games")
             .and_then(|v| v.as_array_mut())
             .context("games field missing or not an array")?;
 
@@ -73,7 +81,10 @@ impl AppStore {
                 // Extract old platform-specific fields
                 let platform = game_obj.remove("platform");
                 let app_id = game_obj.remove("appId");
-                let installed = game_obj.remove("installed").and_then(|v| v.as_bool()).unwrap_or(false);
+                let installed = game_obj
+                    .remove("installed")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 let playtime = game_obj.remove("playtime");
                 let last = game_obj.remove("last");
 
@@ -111,17 +122,49 @@ impl AppStore {
             games: vec![],
             lists: vec![],
             genres: vec![
-                "Action".into(), "Adventure".into(), "Art".into(), "Card".into(),
-                "Co-op".into(), "Cozy".into(), "Horror".into(), "Metroidvania".into(),
-                "Mystery".into(), "Narrative".into(), "Open world".into(), "Platformer".into(),
-                "Puzzle".into(), "Roguelike".into(), "RPG".into(), "Simulation".into(),
+                "Action".into(),
+                "Adventure".into(),
+                "Art".into(),
+                "Card".into(),
+                "Co-op".into(),
+                "Cozy".into(),
+                "Horror".into(),
+                "Metroidvania".into(),
+                "Mystery".into(),
+                "Narrative".into(),
+                "Open world".into(),
+                "Platformer".into(),
+                "Puzzle".into(),
+                "Roguelike".into(),
+                "RPG".into(),
+                "Simulation".into(),
             ],
             statuses: vec![
-                StatusMeta { id: GameStatus::Backlog,  label: "Backlog".into(),  icon: "layers".into() },
-                StatusMeta { id: GameStatus::Playing,  label: "Playing".into(),  icon: "play".into() },
-                StatusMeta { id: GameStatus::Beaten,   label: "Beaten".into(),   icon: "check-check".into() },
-                StatusMeta { id: GameStatus::Dropped,  label: "Dropped".into(),  icon: "x".into() },
-                StatusMeta { id: GameStatus::Wishlist, label: "Wishlist".into(), icon: "bookmark".into() },
+                StatusMeta {
+                    id: GameStatus::Backlog,
+                    label: "Backlog".into(),
+                    icon: "layers".into(),
+                },
+                StatusMeta {
+                    id: GameStatus::Playing,
+                    label: "Playing".into(),
+                    icon: "play".into(),
+                },
+                StatusMeta {
+                    id: GameStatus::Beaten,
+                    label: "Beaten".into(),
+                    icon: "check-check".into(),
+                },
+                StatusMeta {
+                    id: GameStatus::Dropped,
+                    label: "Dropped".into(),
+                    icon: "x".into(),
+                },
+                StatusMeta {
+                    id: GameStatus::Wishlist,
+                    label: "Wishlist".into(),
+                    icon: "bookmark".into(),
+                },
             ],
             prefs: Prefs::default(),
         }
@@ -138,20 +181,48 @@ impl AppStore {
     pub fn patch_game(&mut self, id: u64, patch: GamePatch) -> Option<Game> {
         let game = self.data.games.iter_mut().find(|g| g.id == id)?;
 
-        if let Some(v) = patch.title      { game.title     = v; }
-        if let Some(v) = patch.cover      { game.cover     = v; }
-        if let Some(v) = patch.genre      { game.genre     = v; }
-        if let Some(v) = patch.dev        { game.dev       = v; }
-        if let Some(v) = patch.year       { game.year      = v; }
-        if let Some(v) = patch.rating     { game.rating    = v; }
-        if let Some(v) = patch.status     { game.status    = v; }
-        if let Some(v) = patch.metacritic { game.metacritic  = v; }
-        if let Some(v) = patch.opencritic { game.opencritic  = v; }
-        if let Some(v) = patch.user_score { game.user_score  = v; }
-        if let Some(v) = patch.tags       { game.tags   = v; }
-        if let Some(v) = patch.note       { game.note   = v; }
-        if let Some(v) = patch.links      { game.links  = v; }
-        if let Some(v) = patch.custom     { game.custom = v; }
+        if let Some(v) = patch.title {
+            game.title = v;
+        }
+        if let Some(v) = patch.cover {
+            game.cover = v;
+        }
+        if let Some(v) = patch.genre {
+            game.genre = v;
+        }
+        if let Some(v) = patch.dev {
+            game.dev = v;
+        }
+        if let Some(v) = patch.year {
+            game.year = v;
+        }
+        if let Some(v) = patch.rating {
+            game.rating = v;
+        }
+        if let Some(v) = patch.status {
+            game.status = v;
+        }
+        if let Some(v) = patch.metacritic {
+            game.metacritic = v;
+        }
+        if let Some(v) = patch.opencritic {
+            game.opencritic = v;
+        }
+        if let Some(v) = patch.user_score {
+            game.user_score = v;
+        }
+        if let Some(v) = patch.tags {
+            game.tags = v;
+        }
+        if let Some(v) = patch.note {
+            game.note = v;
+        }
+        if let Some(v) = patch.links {
+            game.links = v;
+        }
+        if let Some(v) = patch.custom {
+            game.custom = v;
+        }
 
         let updated = game.clone();
         self.save().ok();
@@ -163,10 +234,10 @@ impl AppStore {
     pub fn sanitized_data(&self) -> CartridgeData {
         let mut data = self.data.clone();
         for account in &mut data.accounts {
-            account.api_key       = None;
-            account.access_token  = None;
+            account.api_key = None;
+            account.access_token = None;
             account.refresh_token = None;
-            account.egs_session   = None;
+            account.egs_session = None;
         }
         data
     }

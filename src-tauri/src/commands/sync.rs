@@ -1,11 +1,11 @@
 use std::sync::Mutex;
 use tauri::State;
 
-use egs_api::EpicGames;
 use egs_api::api::types::account::UserData as EgsUserData;
 use egs_api::api::types::asset_info::AssetInfo as EgsAssetInfo;
 use egs_api::api::types::epic_asset::EpicAsset as EgsAsset;
 use egs_api::api::types::library::Record as EgsRecord;
+use egs_api::EpicGames;
 
 use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
 
@@ -74,14 +74,24 @@ fn has_user_data(g: &Game) -> bool {
 /// fill in wherever `primary` has none.
 fn absorb_game(primary: &mut Game, other: Game) {
     for c in other.copies {
-        if !primary.copies.iter().any(|p| p.platform == c.platform && p.app_id == c.app_id) {
+        if !primary
+            .copies
+            .iter()
+            .any(|p| p.platform == c.platform && p.app_id == c.app_id)
+        {
             primary.copies.push(c);
         }
     }
-    if primary.rating == 0 { primary.rating = other.rating; }
-    if matches!(primary.status, GameStatus::Backlog) { primary.status = other.status; }
+    if primary.rating == 0 {
+        primary.rating = other.rating;
+    }
+    if matches!(primary.status, GameStatus::Backlog) {
+        primary.status = other.status;
+    }
     for t in other.tags {
-        if !primary.tags.contains(&t) { primary.tags.push(t); }
+        if !primary.tags.contains(&t) {
+            primary.tags.push(t);
+        }
     }
     if !other.note.is_empty() && other.note != primary.note {
         if primary.note.is_empty() {
@@ -92,10 +102,18 @@ fn absorb_game(primary: &mut Game, other: Game) {
         }
     }
     primary.custom.extend(other.custom);
-    if primary.cover.is_none()      { primary.cover = other.cover; }
-    if primary.genre.is_empty()     { primary.genre = other.genre; }
-    if primary.dev.is_empty()       { primary.dev = other.dev; }
-    if primary.year == 0            { primary.year = other.year; }
+    if primary.cover.is_none() {
+        primary.cover = other.cover;
+    }
+    if primary.genre.is_empty() {
+        primary.genre = other.genre;
+    }
+    if primary.dev.is_empty() {
+        primary.dev = other.dev;
+    }
+    if primary.year == 0 {
+        primary.year = other.year;
+    }
     if primary.steam_match.is_none() && !primary.steam_match_manual {
         primary.steam_match = other.steam_match;
         primary.steam_match_checked_at = other.steam_match_checked_at;
@@ -106,7 +124,9 @@ fn absorb_game(primary: &mut Game, other: Game) {
         primary.metacritic = other.metacritic;
         primary.metacritic_checked_at = other.metacritic_checked_at;
     }
-    if primary.opencritic.is_none() { primary.opencritic = other.opencritic; }
+    if primary.opencritic.is_none() {
+        primary.opencritic = other.opencritic;
+    }
     if primary.user_score_reviews.is_none() {
         primary.user_score = other.user_score;
         primary.user_score_reviews = other.user_score_reviews;
@@ -130,12 +150,16 @@ fn merge_duplicate_games(data: &mut crate::models::CartridgeData) -> u32 {
     // Epic records without catalog data are titled with their internal app_name
     // (e.g. "Marigold") — never match on those.
     let is_placeholder = |g: &Game| {
-        g.copies.iter().any(|c| c.platform == Platform::Epic && c.app_id == g.title)
+        g.copies
+            .iter()
+            .any(|c| c.platform == Platform::Epic && c.app_id == g.title)
     };
 
     let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, g) in data.games.iter().enumerate() {
-        if is_placeholder(g) { continue; }
+        if is_placeholder(g) {
+            continue;
+        }
         let key = normalize_title(&g.title);
         if !key.is_empty() {
             groups.entry(key).or_default().push(i);
@@ -146,10 +170,13 @@ fn merge_duplicate_games(data: &mut crate::models::CartridgeData) -> u32 {
     let mut remap: HashMap<u64, u64> = HashMap::new();
 
     for idxs in groups.into_values().filter(|v| v.len() > 1) {
-        let primary = *idxs.iter().max_by_key(|&&i| {
-            let g = &data.games[i];
-            (has_user_data(g), g.cover.is_some(), std::cmp::Reverse(g.id))
-        }).unwrap();
+        let primary = *idxs
+            .iter()
+            .max_by_key(|&&i| {
+                let g = &data.games[i];
+                (has_user_data(g), g.cover.is_some(), std::cmp::Reverse(g.id))
+            })
+            .unwrap();
 
         for &i in idxs.iter().filter(|&&i| i != primary) {
             let other = data.games[i].clone();
@@ -167,7 +194,9 @@ fn merge_duplicate_games(data: &mut crate::models::CartridgeData) -> u32 {
     for list in &mut data.lists {
         if let Some(ids) = &mut list.game_ids {
             for id in ids.iter_mut() {
-                if let Some(&new_id) = remap.get(id) { *id = new_id; }
+                if let Some(&new_id) = remap.get(id) {
+                    *id = new_id;
+                }
             }
             let mut seen = HashSet::new();
             ids.retain(|id| seen.insert(*id));
@@ -179,8 +208,7 @@ fn merge_duplicate_games(data: &mut crate::models::CartridgeData) -> u32 {
 
 fn relative_time(unix: u64) -> String {
     use chrono::{DateTime, Utc};
-    let dt = DateTime::<Utc>::from_timestamp(unix as i64, 0)
-        .unwrap_or_else(Utc::now);
+    let dt = DateTime::<Utc>::from_timestamp(unix as i64, 0).unwrap_or_else(Utc::now);
     let days = Utc::now().signed_duration_since(dt).num_days();
     match days {
         0 => "today".into(),
@@ -197,7 +225,13 @@ async fn download_cover(
     url: &str,
     dest: &std::path::Path,
 ) -> anyhow::Result<()> {
-    let bytes = client.get(url).send().await?.error_for_status()?.bytes().await?;
+    let bytes = client
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
     std::fs::write(dest, &bytes)?;
     Ok(())
 }
@@ -223,7 +257,11 @@ async fn try_download(
 async fn steam_parent_appid(client: &reqwest::Client, appid: u64) -> Option<u64> {
     let url = format!("https://store.steampowered.com/api/appdetails?appids={appid}&filters=basic");
     let v: serde_json::Value = client.get(&url).send().await.ok()?.json().await.ok()?;
-    let parent = v.get(appid.to_string())?.get("data")?.get("steam_appid")?.as_u64()?;
+    let parent = v
+        .get(appid.to_string())?
+        .get("data")?
+        .get("steam_appid")?
+        .as_u64()?;
     (parent != appid).then_some(parent)
 }
 
@@ -295,27 +333,33 @@ pub async fn add_steam_account(
     let result = match store.data.accounts.iter_mut().find(|a| a.id == steam_id) {
         Some(existing) => {
             // Update only credential/identity fields; preserve sync history.
-            existing.handle  = player.personaname;
+            existing.handle = player.personaname;
             existing.api_key = Some(api_key);
-            Account { api_key: None, ..existing.clone() }
+            Account {
+                api_key: None,
+                ..existing.clone()
+            }
         }
         None => {
             let account = Account {
-                id:            steam_id.clone(),
-                name:          "Steam".into(),
-                handle:        player.personaname,
-                platform:      Platform::Steam,
-                count:         0,
-                synced:        "never".into(),
-                status:        AccountStatus::Ok,
-                api_key:       Some(api_key),
-                access_token:  None,
+                id: steam_id.clone(),
+                name: "Steam".into(),
+                handle: player.personaname,
+                platform: Platform::Steam,
+                count: 0,
+                synced: "never".into(),
+                status: AccountStatus::Ok,
+                api_key: Some(api_key),
+                access_token: None,
                 refresh_token: None,
-                expires_at:    None,
-                egs_session:   None,
+                expires_at: None,
+                egs_session: None,
             };
             store.data.accounts.push(account.clone());
-            Account { api_key: None, ..account }
+            Account {
+                api_key: None,
+                ..account
+            }
         }
     };
 
@@ -324,7 +368,11 @@ pub async fn add_steam_account(
 }
 
 #[tauri::command]
-pub async fn sync_account(app: AppHandle, state: Db<'_>, account_id: String) -> Result<SyncResult, String> {
+pub async fn sync_account(
+    app: AppHandle,
+    state: Db<'_>,
+    account_id: String,
+) -> Result<SyncResult, String> {
     let (platform, api_key) = {
         let store = state.lock().unwrap();
         let account = store
@@ -338,8 +386,8 @@ pub async fn sync_account(app: AppHandle, state: Db<'_>, account_id: String) -> 
 
     let result = match platform {
         Platform::Steam => sync_steam(state, api_key, account_id).await,
-        Platform::Gog   => sync_gog(state, account_id).await,
-        Platform::Epic  => sync_epic(state, account_id).await,
+        Platform::Gog => sync_gog(state, account_id).await,
+        Platform::Epic => sync_epic(state, account_id).await,
     };
     // Paced background job: title matching for new GOG/Epic games, reviews,
     // Metacritic. Starts after covers so the two don't compete for the store
@@ -385,12 +433,18 @@ async fn sync_steam(
 
             // First pass: look for existing game with this Steam app_id in any copy
             let existing_by_app_id = store.data.games.iter_mut().find(|g| {
-                g.copies.iter().any(|c| c.platform == Platform::Steam && c.app_id == app_id_str)
+                g.copies
+                    .iter()
+                    .any(|c| c.platform == Platform::Steam && c.app_id == app_id_str)
             });
 
             if let Some(game) = existing_by_app_id {
                 // Update Steam copy
-                if let Some(copy) = game.copies.iter_mut().find(|c| c.platform == Platform::Steam && c.app_id == app_id_str) {
+                if let Some(copy) = game
+                    .copies
+                    .iter_mut()
+                    .find(|c| c.platform == Platform::Steam && c.app_id == app_id_str)
+                {
                     copy.playtime = playtime;
                     copy.last = last.clone();
                     copy.installed = installed;
@@ -399,9 +453,11 @@ async fn sync_steam(
             } else {
                 // Second pass: try fuzzy match by normalized title
                 let normalized = normalize_title(&sg.name);
-                let fuzzy_match = store.data.games.iter_mut().find(|g| {
-                    normalize_title(&g.title) == normalized
-                });
+                let fuzzy_match = store
+                    .data
+                    .games
+                    .iter_mut()
+                    .find(|g| normalize_title(&g.title) == normalized);
 
                 if let Some(game) = fuzzy_match {
                     // Add Steam copy to existing game
@@ -430,7 +486,13 @@ async fn sync_steam(
                         year: 0,
                         metacritic: None,
                         opencritic: None,
-                        user_score: None, user_score_reviews: None, metacritic_checked_at: None, steam_match: None, steam_match_checked_at: None, steam_match_manual: false, steam_match_rev: 0,
+                        user_score: None,
+                        user_score_reviews: None,
+                        metacritic_checked_at: None,
+                        steam_match: None,
+                        steam_match_checked_at: None,
+                        steam_match_manual: false,
+                        steam_match_rev: 0,
                         links: Default::default(),
                         custom: vec![],
                         copies: vec![GameCopy {
@@ -454,7 +516,9 @@ async fn sync_steam(
             acc.count = steam_games.len() as u32;
         }
         let merged = merge_duplicate_games(&mut store.data);
-        if merged > 0 { eprintln!("[Steam] merged {merged} cross-platform duplicates"); }
+        if merged > 0 {
+            eprintln!("[Steam] merged {merged} cross-platform duplicates");
+        }
         store.save().map_err(|e| e.to_string())?;
 
         store.covers_dir.clone()
@@ -484,9 +548,13 @@ async fn sync_steam(
                 // Find game with this Steam app_id in any copy; keep a cover it
                 // already has from another platform.
                 if let Some(game) = store.data.games.iter_mut().find(|g| {
-                    g.copies.iter().any(|c| c.platform == Platform::Steam && c.app_id == app_id_str)
+                    g.copies
+                        .iter()
+                        .any(|c| c.platform == Platform::Steam && c.app_id == app_id_str)
                 }) {
-                    if game.cover.is_none() { game.cover = Some(cover_str); }
+                    if game.cover.is_none() {
+                        game.cover = Some(cover_str);
+                    }
                 }
                 store.save().ok();
             }
@@ -494,7 +562,11 @@ async fn sync_steam(
         }
     }
 
-    Ok(SyncResult { added, updated, errors })
+    Ok(SyncResult {
+        added,
+        updated,
+        errors,
+    })
 }
 
 #[tauri::command]
@@ -573,17 +645,20 @@ const EPIC_AUTH_SCRIPT: &str = r#"
 })();
 "#;
 
-
 /// Build an authenticated `EpicGames` client from the stored session for `account_id`.
 /// Handles token refresh automatically via egs-api's `login()`.
 async fn build_epic_client(state: &Db<'_>, account_id: &str) -> Result<EpicGames, String> {
     let session_json = {
         let store = state.lock().unwrap();
-        let acc = store.data.accounts.iter()
+        let acc = store
+            .data
+            .accounts
+            .iter()
             .find(|a| a.id == account_id)
             .ok_or_else(|| format!("account {account_id} not found"))?;
-        acc.egs_session.clone()
-            .ok_or_else(|| "Epic session not found — please re-authenticate in Settings".to_string())?
+        acc.egs_session.clone().ok_or_else(|| {
+            "Epic session not found — please re-authenticate in Settings".to_string()
+        })?
     };
 
     let user_data: EgsUserData = serde_json::from_str(&session_json)
@@ -610,7 +685,10 @@ async fn epic_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, Strin
     use std::sync::{Arc, Mutex};
 
     // Close any lingering window from a previous attempt before opening a fresh one.
-    let label = format!("epic-auth-{}", &uuid::Uuid::new_v4().to_string().replace("-", "")[..8]);
+    let label = format!(
+        "epic-auth-{}",
+        &uuid::Uuid::new_v4().to_string().replace("-", "")[..8]
+    );
 
     // Start at logout so any previous Epic web session in the webview is cleared.
     // Logout redirects to login, which redirects to the store after sign-in.
@@ -618,11 +696,13 @@ async fn epic_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, Strin
     let login_url = {
         let login_target = {
             let mut u = reqwest::Url::parse("https://www.epicgames.com/id/login").unwrap();
-            u.query_pairs_mut().append_pair("redirectUrl", "https://store.epicgames.com");
+            u.query_pairs_mut()
+                .append_pair("redirectUrl", "https://store.epicgames.com");
             u.to_string()
         };
         let mut url = reqwest::Url::parse("https://www.epicgames.com/id/logout").unwrap();
-        url.query_pairs_mut().append_pair("redirectUrl", &login_target);
+        url.query_pairs_mut()
+            .append_pair("redirectUrl", &login_target);
         url.to_string()
     };
 
@@ -633,7 +713,9 @@ async fn epic_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, Strin
     let tx_nav = Arc::clone(&tx);
 
     let webview_url = WebviewUrl::External(
-        login_url.parse().map_err(|e| format!("invalid Epic auth URL: {e}"))?,
+        login_url
+            .parse()
+            .map_err(|e| format!("invalid Epic auth URL: {e}"))?,
     );
 
     let window = WebviewWindowBuilder::new(&app, label, webview_url)
@@ -644,14 +726,17 @@ async fn epic_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, Strin
         .initialization_script(EPIC_AUTH_SCRIPT)
         .on_navigation(move |url| {
             let url_str = url.to_string();
-            eprintln!("[Epic] webview navigating → {}", &url_str[..url_str.len().min(120)]);
+            eprintln!(
+                "[Epic] webview navigating → {}",
+                &url_str[..url_str.len().min(120)]
+            );
 
             // Two interception points:
             // 1. Our init script redirects via cartridge-epic:// (JSON body case).
             // 2. Epic may 302-redirect directly to com.epicgames.launcher:// instead
             //    of returning JSON — intercept that too.
-            let is_our_scheme    = url.scheme() == "cartridge-epic";
-            let is_launcher_url  = url_str.starts_with("com.epicgames.launcher://");
+            let is_our_scheme = url.scheme() == "cartridge-epic";
+            let is_launcher_url = url_str.starts_with("com.epicgames.launcher://");
 
             if is_our_scheme || is_launcher_url {
                 let code = url
@@ -660,13 +745,13 @@ async fn epic_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, Strin
                     .map(|(_, v)| v.into_owned());
                 eprintln!(
                     "[Epic] auth URL intercepted (scheme={}) — code present: {}",
-                    url.scheme(), code.is_some()
+                    url.scheme(),
+                    code.is_some()
                 );
                 if let Ok(mut guard) = tx_nav.lock() {
                     if let Some(sender) = guard.take() {
-                        let _ = sender.send(
-                            code.ok_or_else(|| "no auth code in Epic redirect".to_string()),
-                        );
+                        let _ = sender
+                            .send(code.ok_or_else(|| "no auth code in Epic redirect".to_string()));
                     }
                 }
                 return false; // block — we've captured what we need
@@ -683,22 +768,30 @@ async fn epic_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, Strin
         .map_err(|e| e)?;
 
     let _ = window.close();
-    eprintln!("[Epic] auth code received (len={}) — exchanging for tokens via egs-api", code.len());
+    eprintln!(
+        "[Epic] auth code received (len={}) — exchanging for tokens via egs-api",
+        code.len()
+    );
     eprintln!("[Epic] code snippet: {}…", &code[..code.len().min(12)]);
 
     // /id/api/redirect?responseType=code returns an *authorization* code, not an
     // exchange code — pass it as the 2nd arg (grant_type=authorization_code).
     // Passing it as exchange_token makes Epic reply "Id must not be null".
     let mut egs = EpicGames::new();
-    egs.try_auth_code(None, Some(code)).await
+    egs.try_auth_code(None, Some(code))
+        .await
         .map_err(|e| format!("Epic authentication failed: {e}"))?;
 
     let user_data = egs.user_details();
 
-    let account_id = user_data.account_id.clone()
+    let account_id = user_data
+        .account_id
+        .clone()
         .ok_or("Epic token response missing account_id")?;
 
-    let handle = user_data.display_name.clone()
+    let handle = user_data
+        .display_name
+        .clone()
         .unwrap_or_else(|| account_id.clone());
 
     eprintln!("[Epic] authenticated — account_id: {account_id}, display_name: {handle}");
@@ -710,25 +803,25 @@ async fn epic_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, Strin
 
     let result = match store.data.accounts.iter_mut().find(|a| a.id == account_id) {
         Some(existing) => {
-            existing.handle      = handle;
+            existing.handle = handle;
             existing.egs_session = Some(egs_session);
-            existing.status      = AccountStatus::Ok;
+            existing.status = AccountStatus::Ok;
             stripped(existing.clone())
         }
         None => {
             let account = Account {
-                id:            account_id.clone(),
-                name:          "Epic Games".into(),
+                id: account_id.clone(),
+                name: "Epic Games".into(),
                 handle,
-                platform:      Platform::Epic,
-                count:         0,
-                synced:        "never".into(),
-                status:        AccountStatus::Ok,
-                api_key:       None,
-                access_token:  None,
+                platform: Platform::Epic,
+                count: 0,
+                synced: "never".into(),
+                status: AccountStatus::Ok,
+                api_key: None,
+                access_token: None,
                 refresh_token: None,
-                expires_at:    None,
-                egs_session:   Some(egs_session),
+                expires_at: None,
+                egs_session: Some(egs_session),
             };
             store.data.accounts.push(account.clone());
             stripped(account)
@@ -758,9 +851,9 @@ async fn fetch_epic_catalog(
 
     for r in records {
         let asset = EgsAsset {
-            app_name:        r.app_name.clone(),
+            app_name: r.app_name.clone(),
             catalog_item_id: r.catalog_item_id.clone(),
-            namespace:       r.namespace.clone(),
+            namespace: r.namespace.clone(),
             ..Default::default()
         };
         let mut egs = egs.clone();
@@ -775,14 +868,22 @@ async fn fetch_epic_catalog(
     let mut out = std::collections::HashMap::new();
     let mut failures = 0usize;
     while let Some(joined) = tasks.join_next().await {
-        let Ok((asset, res)) = joined else { failures += 1; continue };
+        let Ok((asset, res)) = joined else {
+            failures += 1;
+            continue;
+        };
         match res {
-            Ok(Some(info)) => { out.insert(asset.catalog_item_id, info); }
+            Ok(Some(info)) => {
+                out.insert(asset.catalog_item_id, info);
+            }
             Ok(None) => {}
             Err(e) => {
                 failures += 1;
                 if failures <= 5 {
-                    eprintln!("[Epic] catalog {} ({}) FAILED: {e:?}", asset.app_name, asset.namespace);
+                    eprintln!(
+                        "[Epic] catalog {} ({}) FAILED: {e:?}",
+                        asset.app_name, asset.namespace
+                    );
                 }
             }
         }
@@ -798,13 +899,20 @@ async fn fetch_epic_catalog(
 /// last one and it carries no user data.  Returns 1 if a game was removed.
 fn remove_epic_placeholder(data: &mut crate::models::CartridgeData, app_name: &str) -> u32 {
     let Some(idx) = data.games.iter().position(|g| {
-        g.copies.iter().any(|c| c.platform == Platform::Epic && c.app_id == app_name)
-    }) else { return 0 };
+        g.copies
+            .iter()
+            .any(|c| c.platform == Platform::Epic && c.app_id == app_name)
+    }) else {
+        return 0;
+    };
 
     let game = &mut data.games[idx];
     // Only touch entries that never got real metadata (title is still the app_name).
-    if game.title != app_name { return 0; }
-    game.copies.retain(|c| !(c.platform == Platform::Epic && c.app_id == app_name));
+    if game.title != app_name {
+        return 0;
+    }
+    game.copies
+        .retain(|c| !(c.platform == Platform::Epic && c.app_id == app_name));
 
     let untouched = game.copies.is_empty()
         && game.rating == 0
@@ -813,7 +921,10 @@ fn remove_epic_placeholder(data: &mut crate::models::CartridgeData, app_name: &s
         && game.custom.is_empty()
         && matches!(game.status, GameStatus::Backlog);
     let id = game.id;
-    let in_list = data.lists.iter().any(|l| l.game_ids.as_ref().is_some_and(|ids| ids.contains(&id)));
+    let in_list = data
+        .lists
+        .iter()
+        .any(|l| l.game_ids.as_ref().is_some_and(|ids| ids.contains(&id)));
 
     if untouched && !in_list {
         data.games.remove(idx);
@@ -830,14 +941,20 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
 
     // Fetch all library records — egs-api paginates internally
     eprintln!("[Epic] fetching library via egs-api");
-    let library = egs.library_items(true).await
+    let library = egs
+        .library_items(true)
+        .await
         .ok_or_else(|| "Epic library fetch failed — please try again".to_string())?;
 
     let all_records = library.records;
-    eprintln!("[Epic] library fetch complete — {} records total", all_records.len());
+    eprintln!(
+        "[Epic] library fetch complete — {} records total",
+        all_records.len()
+    );
 
     // Skip Unreal Engine asset namespace and records with no namespace
-    let game_records: Vec<_> = all_records.iter()
+    let game_records: Vec<_> = all_records
+        .iter()
         .filter(|r| !r.namespace.is_empty() && r.namespace != "ue")
         .collect();
 
@@ -846,20 +963,31 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
     // only new or incomplete records are looked up.
     let to_lookup: Vec<&EgsRecord> = {
         let store = state.lock().unwrap();
-        game_records.iter().copied().filter(|r| {
-            !store.data.games.iter().any(|g| {
-                g.cover.is_some()
-                    && g.title != r.app_name
-                    && g.copies.iter().any(|c| c.platform == Platform::Epic && c.app_id == r.app_name)
+        game_records
+            .iter()
+            .copied()
+            .filter(|r| {
+                !store.data.games.iter().any(|g| {
+                    g.cover.is_some()
+                        && g.title != r.app_name
+                        && g.copies
+                            .iter()
+                            .any(|c| c.platform == Platform::Epic && c.app_id == r.app_name)
+                })
             })
-        }).collect()
+            .collect()
     };
     eprintln!(
         "[Epic] fetching catalog metadata for {} items ({} already complete)",
-        to_lookup.len(), game_records.len() - to_lookup.len()
+        to_lookup.len(),
+        game_records.len() - to_lookup.len()
     );
     let catalog = fetch_epic_catalog(&egs, &to_lookup).await;
-    eprintln!("[Epic] catalog fetch complete — {} of {} items", catalog.len(), to_lookup.len());
+    eprintln!(
+        "[Epic] catalog fetch complete — {} of {} items",
+        catalog.len(),
+        to_lookup.len()
+    );
 
     // Capture updated session after API calls so refresh token changes are persisted
     let updated_session_json = serde_json::to_string(&egs.user_details()).ok();
@@ -878,7 +1006,9 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
             // data imported these as placeholder games — drop those leftovers.
             let is_non_game = info
                 .and_then(|i| i.categories.as_ref())
-                .is_some_and(|cats| !cats.is_empty() && !cats.iter().any(|c| c.path.starts_with("games")));
+                .is_some_and(|cats| {
+                    !cats.is_empty() && !cats.iter().any(|c| c.path.starts_with("games"))
+                });
             if is_non_game {
                 removed += remove_epic_placeholder(&mut store.data, &record.app_name);
                 continue;
@@ -899,43 +1029,58 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
             // Covers are 3:4 portrait — prefer tall art, fall back to the wide box.
             let cover_url = info.and_then(|i| {
                 let images = i.key_images.as_ref()?;
-                ["DieselGameBoxTall", "OfferImageTall", "Thumbnail", "DieselGameBox"]
-                    .iter()
-                    .find_map(|t| images.iter().find(|img| img.type_field == *t))
-                    .map(|img| {
-                        let mut url = img.url.clone();
-                        // Epic's CDN resizes on request; originals can be several MB.
-                        if url.query().is_none() {
-                            url.set_query(Some("w=480&h=640&resize=1"));
-                        }
-                        url.to_string()
-                    })
+                [
+                    "DieselGameBoxTall",
+                    "OfferImageTall",
+                    "Thumbnail",
+                    "DieselGameBox",
+                ]
+                .iter()
+                .find_map(|t| images.iter().find(|img| img.type_field == *t))
+                .map(|img| {
+                    let mut url = img.url.clone();
+                    // Epic's CDN resizes on request; originals can be several MB.
+                    if url.query().is_none() {
+                        url.set_query(Some("w=480&h=640&resize=1"));
+                    }
+                    url.to_string()
+                })
             });
 
             // First pass: look for existing game with this Epic app_id in any copy
             let existing_by_app_id = store.data.games.iter_mut().find(|g| {
-                g.copies.iter().any(|c| c.platform == Platform::Epic && c.app_id == record.app_name)
+                g.copies
+                    .iter()
+                    .any(|c| c.platform == Platform::Epic && c.app_id == record.app_name)
             });
 
             if let Some(game) = existing_by_app_id {
-                if let Some(copy) = game.copies.iter_mut().find(|c| {
-                    c.platform == Platform::Epic && c.app_id == record.app_name
-                }) {
+                if let Some(copy) = game
+                    .copies
+                    .iter_mut()
+                    .find(|c| c.platform == Platform::Epic && c.app_id == record.app_name)
+                {
                     copy.account_id = Some(account_id.clone());
                 }
                 // Replace the app_name placeholder from a sync without catalog data.
                 if game.title == record.app_name && title != record.app_name {
                     game.title = title.clone();
                 }
-                if game.year == 0 && year > 0 { game.year = year; }
-                if game.dev.is_empty() && !dev.is_empty() { game.dev = dev.clone(); }
+                if game.year == 0 && year > 0 {
+                    game.year = year;
+                }
+                if game.dev.is_empty() && !dev.is_empty() {
+                    game.dev = dev.clone();
+                }
                 updated += 1;
             } else {
                 // Second pass: fuzzy match by normalized title
                 let normalized = normalize_title(&title);
-                let fuzzy_match = store.data.games.iter_mut().find(|g| {
-                    normalize_title(&g.title) == normalized
-                });
+                let fuzzy_match = store
+                    .data
+                    .games
+                    .iter_mut()
+                    .find(|g| normalize_title(&g.title) == normalized);
 
                 if let Some(game) = fuzzy_match {
                     game.copies.push(GameCopy {
@@ -946,8 +1091,12 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
                         playtime: None,
                         last: None,
                     });
-                    if game.year == 0 && year > 0 { game.year = year; }
-                    if game.dev.is_empty() && !dev.is_empty() { game.dev = dev.clone(); }
+                    if game.year == 0 && year > 0 {
+                        game.year = year;
+                    }
+                    if game.dev.is_empty() && !dev.is_empty() {
+                        game.dev = dev.clone();
+                    }
                     updated += 1;
                 } else {
                     let next_id = store.data.games.iter().map(|g| g.id).max().unwrap_or(0) + 1;
@@ -964,7 +1113,13 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
                         year,
                         metacritic: None,
                         opencritic: None,
-                        user_score: None, user_score_reviews: None, metacritic_checked_at: None, steam_match: None, steam_match_checked_at: None, steam_match_manual: false, steam_match_rev: 0,
+                        user_score: None,
+                        user_score_reviews: None,
+                        metacritic_checked_at: None,
+                        steam_match: None,
+                        steam_match_checked_at: None,
+                        steam_match_manual: false,
+                        steam_match_rev: 0,
                         links: Default::default(),
                         custom: vec![],
                         copies: vec![GameCopy {
@@ -991,13 +1146,15 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
         if let Some(acc) = store.data.accounts.iter_mut().find(|a| a.id == account_id) {
             acc.synced = now;
             acc.status = AccountStatus::Ok;
-            acc.count  = added + updated;
+            acc.count = added + updated;
             if let Some(json) = updated_session_json {
                 acc.egs_session = Some(json);
             }
         }
         let merged = merge_duplicate_games(&mut store.data);
-        if merged > 0 { eprintln!("[Epic] merged {merged} cross-platform duplicates"); }
+        if merged > 0 {
+            eprintln!("[Epic] merged {merged} cross-platform duplicates");
+        }
         store.save().map_err(|e| e.to_string())?;
         store.covers_dir.clone()
     };
@@ -1029,7 +1186,9 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
     let mut errors: Vec<String> = Vec::new();
     let mut linked: Vec<(String, String)> = Vec::new();
     while let Some(joined) = tasks.join_next().await {
-        let Ok((app_name, cover_path, res)) = joined else { continue };
+        let Ok((app_name, cover_path, res)) = joined else {
+            continue;
+        };
         match res {
             Ok(()) => linked.push((app_name, cover_path.to_string_lossy().into_owned())),
             Err(e) => {
@@ -1044,7 +1203,9 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
         for (app_name, cover_str) in &linked {
             if let Some(game) = store.data.games.iter_mut().find(|g| {
                 g.cover.is_none()
-                    && g.copies.iter().any(|c| c.platform == Platform::Epic && c.app_id == *app_name)
+                    && g.copies
+                        .iter()
+                        .any(|c| c.platform == Platform::Epic && c.app_id == *app_name)
             }) {
                 game.cover = Some(cover_str.clone());
             }
@@ -1054,49 +1215,54 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
 
     eprintln!(
         "[Epic] sync done — added {added}, updated {updated}, covers {}, errors {}",
-        linked.len(), errors.len()
+        linked.len(),
+        errors.len()
     );
-    Ok(SyncResult { added, updated, errors })
+    Ok(SyncResult {
+        added,
+        updated,
+        errors,
+    })
 }
 
 // ── GOG OAuth ──────────────────────────────────────────────────────────────
 
-const GOG_CLIENT_ID:     &str = "46899977096215655";
+const GOG_CLIENT_ID: &str = "46899977096215655";
 const GOG_CLIENT_SECRET: &str = "9d85c43b1482497dbbce61f6e4aa173a433796eeae2ca8c5f6129f2dc4de46d9";
 
 // Response shapes
 
 #[derive(serde::Deserialize)]
 struct GogTokenResponse {
-    access_token:  String,
+    access_token: String,
     refresh_token: Option<String>,
-    expires_in:    u64,
-    user_id:       Option<String>,
+    expires_in: u64,
+    user_id: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
 struct GogUserData {
     username: Option<String>,
     #[serde(rename = "userId")]
-    user_id:  Option<String>,
+    user_id: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GogProductsPage {
     total_pages: u32,
-    products:    Vec<GogProduct>,
+    products: Vec<GogProduct>,
 }
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GogProduct {
-    id:           u64,
-    title:        String,
+    id: u64,
+    title: String,
     #[serde(default)]
-    image:        Option<String>,
+    image: Option<String>,
     #[serde(default)]
-    is_movie:     Option<bool>,
+    is_movie: Option<bool>,
     #[serde(default)]
     release_date: Option<serde_json::Value>,
 }
@@ -1109,7 +1275,13 @@ const GOG_REDIRECT_URI: &str = "https://embed.gog.com/on_login_success?origin=cl
 // ── Token helpers ───────────────────────────────────────────────────────────
 
 fn stripped(account: Account) -> Account {
-    Account { api_key: None, access_token: None, refresh_token: None, egs_session: None, ..account }
+    Account {
+        api_key: None,
+        access_token: None,
+        refresh_token: None,
+        egs_session: None,
+        ..account
+    }
 }
 
 /// Returns a valid GOG access token for `account_id`, refreshing it first if
@@ -1117,23 +1289,29 @@ fn stripped(account: Account) -> Account {
 async fn ensure_gog_token(state: &Db<'_>, account_id: &str) -> Result<String, String> {
     let (access_token, refresh_token, expires_at) = {
         let store = state.lock().unwrap();
-        let acc = store.data.accounts.iter()
+        let acc = store
+            .data
+            .accounts
+            .iter()
             .find(|a| a.id == account_id)
             .ok_or_else(|| format!("account {account_id} not found"))?;
-        (acc.access_token.clone(), acc.refresh_token.clone(), acc.expires_at)
+        (
+            acc.access_token.clone(),
+            acc.refresh_token.clone(),
+            acc.expires_at,
+        )
     };
 
     let now = chrono::Utc::now().timestamp();
-    let still_valid = access_token.is_some()
-        && expires_at.map(|exp| exp - now > 300).unwrap_or(false);
+    let still_valid =
+        access_token.is_some() && expires_at.map(|exp| exp - now > 300).unwrap_or(false);
 
     if still_valid {
         return Ok(access_token.unwrap());
     }
 
-    let refresh_token = refresh_token.ok_or(
-        "GOG session expired — please re-authenticate in Settings"
-    )?;
+    let refresh_token =
+        refresh_token.ok_or("GOG session expired — please re-authenticate in Settings")?;
 
     eprintln!("[GOG] access token expired — refreshing with refresh_token");
 
@@ -1141,32 +1319,39 @@ async fn ensure_gog_token(state: &Db<'_>, account_id: &str) -> Result<String, St
     let resp = client
         .get("https://auth.gog.com/token")
         .query(&[
-            ("client_id",     GOG_CLIENT_ID),
+            ("client_id", GOG_CLIENT_ID),
             ("client_secret", GOG_CLIENT_SECRET),
-            ("grant_type",    "refresh_token"),
+            ("grant_type", "refresh_token"),
             ("refresh_token", refresh_token.as_str()),
         ])
-        .send().await.map_err(|e| e.to_string())?;
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
 
     eprintln!("[GOG] token refresh → HTTP {}", resp.status());
 
     let tokens: GogTokenResponse = resp
         .error_for_status()
         .map_err(|e| format!("token refresh failed — please re-authenticate: {e}"))?
-        .json().await.map_err(|e| e.to_string())?;
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
 
-    let new_token     = tokens.access_token.clone();
-    let new_expires   = now + tokens.expires_in as i64;
-    let new_refresh   = tokens.refresh_token.unwrap_or(refresh_token);
+    let new_token = tokens.access_token.clone();
+    let new_expires = now + tokens.expires_in as i64;
+    let new_refresh = tokens.refresh_token.unwrap_or(refresh_token);
 
-    eprintln!("[GOG] token refreshed — new expiry in {}s", tokens.expires_in);
+    eprintln!(
+        "[GOG] token refreshed — new expiry in {}s",
+        tokens.expires_in
+    );
 
     {
         let mut store = state.lock().unwrap();
         if let Some(acc) = store.data.accounts.iter_mut().find(|a| a.id == account_id) {
-            acc.access_token  = Some(tokens.access_token);
+            acc.access_token = Some(tokens.access_token);
             acc.refresh_token = Some(new_refresh);
-            acc.expires_at    = Some(new_expires);
+            acc.expires_at = Some(new_expires);
         }
         store.save().ok();
     }
@@ -1186,10 +1371,10 @@ async fn gog_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, String
     let auth_url = {
         let mut url = reqwest::Url::parse("https://auth.gog.com/auth").unwrap();
         url.query_pairs_mut()
-            .append_pair("client_id",     GOG_CLIENT_ID)
-            .append_pair("redirect_uri",  GOG_REDIRECT_URI)
+            .append_pair("client_id", GOG_CLIENT_ID)
+            .append_pair("redirect_uri", GOG_REDIRECT_URI)
             .append_pair("response_type", "code")
-            .append_pair("layout",        "client2");
+            .append_pair("layout", "client2");
         url.to_string()
     };
 
@@ -1200,7 +1385,9 @@ async fn gog_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, String
     let tx_nav = Arc::clone(&tx);
 
     let webview_url = WebviewUrl::External(
-        auth_url.parse().map_err(|e| format!("invalid auth URL: {e}"))?,
+        auth_url
+            .parse()
+            .map_err(|e| format!("invalid auth URL: {e}"))?,
     );
 
     let window = WebviewWindowBuilder::new(&app, "gog-auth", webview_url)
@@ -1213,9 +1400,7 @@ async fn gog_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, String
         // the navigation (return false) so the WebView doesn't try to load it.
         .on_navigation(move |url| {
             eprintln!("[GOG] webview navigating → {url}");
-            if url.host_str() == Some("embed.gog.com")
-                && url.path() == "/on_login_success"
-            {
+            if url.host_str() == Some("embed.gog.com") && url.path() == "/on_login_success" {
                 let code = url
                     .query_pairs()
                     .find(|(k, _)| k == "code")
@@ -1228,9 +1413,8 @@ async fn gog_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, String
 
                 if let Ok(mut guard) = tx_nav.lock() {
                     if let Some(sender) = guard.take() {
-                        let _ = sender.send(
-                            code.ok_or_else(|| "no code in GOG redirect URL".to_string()),
-                        );
+                        let _ = sender
+                            .send(code.ok_or_else(|| "no code in GOG redirect URL".to_string()));
                     }
                 }
                 false // cancel — we don't want to render the redirect target
@@ -1257,20 +1441,24 @@ async fn gog_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, String
     let token_resp = client
         .get("https://auth.gog.com/token")
         .query(&[
-            ("client_id",     GOG_CLIENT_ID),
+            ("client_id", GOG_CLIENT_ID),
             ("client_secret", GOG_CLIENT_SECRET),
-            ("grant_type",    "authorization_code"),
-            ("code",          code.as_str()),
-            ("redirect_uri",  GOG_REDIRECT_URI),
+            ("grant_type", "authorization_code"),
+            ("code", code.as_str()),
+            ("redirect_uri", GOG_REDIRECT_URI),
         ])
-        .send().await.map_err(|e| e.to_string())?;
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
 
     eprintln!("[GOG] token exchange → HTTP {}", token_resp.status());
 
     let tokens: GogTokenResponse = token_resp
         .error_for_status()
         .map_err(|e| format!("token exchange failed: {e}"))?
-        .json().await.map_err(|e| format!("token parse error: {e}"))?;
+        .json()
+        .await
+        .map_err(|e| format!("token parse error: {e}"))?;
 
     eprintln!(
         "[GOG] tokens received — user_id: {:?}, expires_in: {}s",
@@ -1284,22 +1472,30 @@ async fn gog_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, String
     let user_resp = client
         .get("https://embed.gog.com/userData.json")
         .bearer_auth(&tokens.access_token)
-        .send().await.map_err(|e| e.to_string())?;
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
 
     eprintln!("[GOG] userData → HTTP {}", user_resp.status());
 
     let user: GogUserData = user_resp
         .error_for_status()
         .map_err(|e| format!("user data fetch failed: {e}"))?
-        .json().await.map_err(|e| format!("user data parse error: {e}"))?;
+        .json()
+        .await
+        .map_err(|e| format!("user data parse error: {e}"))?;
 
     eprintln!("[GOG] user: {:?} (id: {:?})", user.username, user.user_id);
 
-    let handle = user.username.clone()
+    let handle = user
+        .username
+        .clone()
         .or_else(|| user.user_id.clone())
         .unwrap_or_else(|| "GOG account".to_string());
 
-    let account_id = tokens.user_id.clone()
+    let account_id = tokens
+        .user_id
+        .clone()
         .or_else(|| user.user_id.clone())
         .unwrap_or_else(|| "gog_local".to_string());
 
@@ -1307,7 +1503,7 @@ async fn gog_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, String
 
     let result = match store.data.accounts.iter_mut().find(|a| a.id == account_id) {
         Some(existing) => {
-            existing.handle       = handle;
+            existing.handle = handle;
             existing.access_token = Some(tokens.access_token);
             // Preserve the previously stored refresh token when the server doesn't
             // issue a new one (shouldn't happen on a fresh auth_code exchange, but
@@ -1315,24 +1511,24 @@ async fn gog_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, String
             if let Some(rt) = tokens.refresh_token {
                 existing.refresh_token = Some(rt);
             }
-            existing.expires_at   = Some(expires_at);
-            existing.status       = AccountStatus::Ok;
+            existing.expires_at = Some(expires_at);
+            existing.status = AccountStatus::Ok;
             stripped(existing.clone())
         }
         None => {
             let account = Account {
-                id:            account_id.clone(),
-                name:          "GOG".into(),
+                id: account_id.clone(),
+                name: "GOG".into(),
                 handle,
-                platform:      Platform::Gog,
-                count:         0,
-                synced:        "never".into(),
-                status:        AccountStatus::Ok,
-                api_key:       None,
-                access_token:  Some(tokens.access_token),
+                platform: Platform::Gog,
+                count: 0,
+                synced: "never".into(),
+                status: AccountStatus::Ok,
+                api_key: None,
+                access_token: Some(tokens.access_token),
                 refresh_token: tokens.refresh_token,
-                expires_at:    Some(expires_at),
-                egs_session:   None,
+                expires_at: Some(expires_at),
+                egs_session: None,
             };
             store.data.accounts.push(account.clone());
             stripped(account)
@@ -1351,7 +1547,7 @@ pub async fn start_oauth_flow(
     platform: Platform,
 ) -> Result<Account, String> {
     match platform {
-        Platform::Gog  => gog_oauth_flow(state, app).await,
+        Platform::Gog => gog_oauth_flow(state, app).await,
         Platform::Epic => epic_oauth_flow(state, app).await,
         p => Err(format!("{p:?} OAuth not yet implemented")),
     }
@@ -1385,7 +1581,10 @@ async fn sync_gog(state: Db<'_>, account_id: String) -> Result<SyncResult, Strin
 
     // Refresh token if needed; mark account Error if we cannot
     let access_token = match ensure_gog_token(&state, &account_id).await {
-        Ok(t) => { eprintln!("[GOG] access token OK"); t }
+        Ok(t) => {
+            eprintln!("[GOG] access token OK");
+            t
+        }
         Err(e) => {
             eprintln!("[GOG] token error: {e}");
             let mut store = state.lock().unwrap();
@@ -1408,29 +1607,40 @@ async fn sync_gog(state: Db<'_>, account_id: String) -> Result<SyncResult, Strin
             .get("https://embed.gog.com/account/getFilteredProducts")
             .query(&[("mediaType", "1"), ("page", page.to_string().as_str())])
             .bearer_auth(&access_token)
-            .send().await.map_err(|e| e.to_string())?;
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
 
         eprintln!("[GOG] library page {page} → HTTP {}", raw.status());
 
         let resp: GogProductsPage = raw
             .error_for_status()
             .map_err(|e| format!("library fetch failed: {e}"))?
-            .json().await.map_err(|e| format!("library parse failed: {e}"))?;
+            .json()
+            .await
+            .map_err(|e| format!("library parse failed: {e}"))?;
 
         let total = resp.total_pages;
         let count = resp.products.len();
         // Filter out movies; mediaType=1 already targets games but double-check
         all_products.extend(
-            resp.products.into_iter().filter(|p| p.is_movie != Some(true))
+            resp.products
+                .into_iter()
+                .filter(|p| p.is_movie != Some(true)),
         );
 
         eprintln!("[GOG] page {page}/{total} — {count} products");
 
-        if page >= total { break; }
+        if page >= total {
+            break;
+        }
         page += 1;
     }
 
-    eprintln!("[GOG] library fetch complete — {} games total", all_products.len());
+    eprintln!(
+        "[GOG] library fetch complete — {} games total",
+        all_products.len()
+    );
 
     let (mut added, mut updated) = (0u32, 0u32);
     let mut cover_queue: Vec<(String, String)> = Vec::new(); // (app_id_str, url)
@@ -1444,23 +1654,33 @@ async fn sync_gog(state: Db<'_>, account_id: String) -> Result<SyncResult, Strin
 
             // First pass: look for existing game with this GOG app_id in any copy
             let existing_by_app_id = store.data.games.iter_mut().find(|g| {
-                g.copies.iter().any(|c| c.platform == Platform::Gog && c.app_id == app_id_str)
+                g.copies
+                    .iter()
+                    .any(|c| c.platform == Platform::Gog && c.app_id == app_id_str)
             });
 
             if let Some(game) = existing_by_app_id {
                 // Update GOG copy metadata if available
-                if let Some(copy) = game.copies.iter_mut().find(|c| c.platform == Platform::Gog && c.app_id == app_id_str) {
+                if let Some(copy) = game
+                    .copies
+                    .iter_mut()
+                    .find(|c| c.platform == Platform::Gog && c.app_id == app_id_str)
+                {
                     copy.account_id = Some(account_id.clone());
                 }
                 // Update game-level metadata if missing
-                if game.year == 0 && year > 0 { game.year = year; }
+                if game.year == 0 && year > 0 {
+                    game.year = year;
+                }
                 updated += 1;
             } else {
                 // Second pass: try fuzzy match by normalized title
                 let normalized = normalize_title(&p.title);
-                let fuzzy_match = store.data.games.iter_mut().find(|g| {
-                    normalize_title(&g.title) == normalized
-                });
+                let fuzzy_match = store
+                    .data
+                    .games
+                    .iter_mut()
+                    .find(|g| normalize_title(&g.title) == normalized);
 
                 if let Some(game) = fuzzy_match {
                     // Add GOG copy to existing game
@@ -1473,7 +1693,9 @@ async fn sync_gog(state: Db<'_>, account_id: String) -> Result<SyncResult, Strin
                         last: None,
                     });
                     // Update game-level metadata if missing
-                    if game.year == 0 && year > 0 { game.year = year; }
+                    if game.year == 0 && year > 0 {
+                        game.year = year;
+                    }
                     updated += 1;
                 } else {
                     // Create new game with GOG copy
@@ -1491,7 +1713,13 @@ async fn sync_gog(state: Db<'_>, account_id: String) -> Result<SyncResult, Strin
                         year,
                         metacritic: None,
                         opencritic: None,
-                        user_score: None, user_score_reviews: None, metacritic_checked_at: None, steam_match: None, steam_match_checked_at: None, steam_match_manual: false, steam_match_rev: 0,
+                        user_score: None,
+                        user_score_reviews: None,
+                        metacritic_checked_at: None,
+                        steam_match: None,
+                        steam_match_checked_at: None,
+                        steam_match_manual: false,
+                        steam_match_rev: 0,
                         links: Default::default(),
                         custom: vec![],
                         copies: vec![GameCopy {
@@ -1518,10 +1746,12 @@ async fn sync_gog(state: Db<'_>, account_id: String) -> Result<SyncResult, Strin
         if let Some(acc) = store.data.accounts.iter_mut().find(|a| a.id == account_id) {
             acc.synced = now;
             acc.status = AccountStatus::Ok;
-            acc.count  = all_products.len() as u32;
+            acc.count = all_products.len() as u32;
         }
         let merged = merge_duplicate_games(&mut store.data);
-        if merged > 0 { eprintln!("[GOG] merged {merged} cross-platform duplicates"); }
+        if merged > 0 {
+            eprintln!("[GOG] merged {merged} cross-platform duplicates");
+        }
         store.save().map_err(|e| e.to_string())?;
         store.covers_dir.clone()
     }; // lock released
@@ -1547,9 +1777,13 @@ async fn sync_gog(state: Db<'_>, account_id: String) -> Result<SyncResult, Strin
                 // Find game with this GOG app_id in any copy; keep a cover it
                 // already has from another platform.
                 if let Some(game) = store.data.games.iter_mut().find(|g| {
-                    g.copies.iter().any(|c| c.platform == Platform::Gog && c.app_id == *app_id_str)
+                    g.copies
+                        .iter()
+                        .any(|c| c.platform == Platform::Gog && c.app_id == *app_id_str)
                 }) {
-                    if game.cover.is_none() { game.cover = Some(cover_str); }
+                    if game.cover.is_none() {
+                        game.cover = Some(cover_str);
+                    }
                 }
                 store.save().ok();
             }
@@ -1560,8 +1794,15 @@ async fn sync_gog(state: Db<'_>, account_id: String) -> Result<SyncResult, Strin
         }
     }
 
-    eprintln!("[GOG] sync done — added {added}, updated {updated}, errors {}", errors.len());
-    Ok(SyncResult { added, updated, errors })
+    eprintln!(
+        "[GOG] sync done — added {added}, updated {updated}, errors {}",
+        errors.len()
+    );
+    Ok(SyncResult {
+        added,
+        updated,
+        errors,
+    })
 }
 
 #[cfg(test)]
@@ -1571,13 +1812,34 @@ mod tests {
 
     fn game(id: u64, title: &str, platform: Platform, app_id: &str) -> Game {
         Game {
-            id, title: title.into(), cover: None, rating: 0, status: GameStatus::Backlog,
-            tags: vec![], note: String::new(), genre: vec![], dev: String::new(), year: 0,
-            metacritic: None, opencritic: None, user_score: None, user_score_reviews: None, metacritic_checked_at: None, steam_match: None, steam_match_checked_at: None, steam_match_manual: false, steam_match_rev: 0,
-            links: Default::default(), custom: vec![],
+            id,
+            title: title.into(),
+            cover: None,
+            rating: 0,
+            status: GameStatus::Backlog,
+            tags: vec![],
+            note: String::new(),
+            genre: vec![],
+            dev: String::new(),
+            year: 0,
+            metacritic: None,
+            opencritic: None,
+            user_score: None,
+            user_score_reviews: None,
+            metacritic_checked_at: None,
+            steam_match: None,
+            steam_match_checked_at: None,
+            steam_match_manual: false,
+            steam_match_rev: 0,
+            links: Default::default(),
+            custom: vec![],
             copies: vec![GameCopy {
-                platform, app_id: app_id.into(), account_id: None,
-                installed: false, playtime: None, last: None,
+                platform,
+                app_id: app_id.into(),
+                account_id: None,
+                installed: false,
+                playtime: None,
+                last: None,
             }],
         }
     }
@@ -1587,7 +1849,8 @@ mod tests {
             "accounts": [], "games": [], "genres": [], "statuses": [],
             "lists": [{ "id": "l1", "name": "Favs", "color": "green", "kind": "manual",
                         "icon": "star", "gameIds": list_ids }],
-        })).unwrap();
+        }))
+        .unwrap();
         d.games = games;
         d
     }
@@ -1595,12 +1858,24 @@ mod tests {
     #[test]
     fn normalize_ignores_punctuation_symbols_and_case() {
         assert_eq!(normalize_title("XCOM® 2"), normalize_title("XCOM 2"));
-        assert_eq!(normalize_title("Amnesia:  The Dark Descent"), normalize_title("Amnesia: The Dark Descent"));
-        assert_eq!(normalize_title("Director’s Cut"), normalize_title("Director's Cut"));
-        assert_eq!(normalize_title("Sword & Sworcery"), normalize_title("Sword and Sworcery"));
+        assert_eq!(
+            normalize_title("Amnesia:  The Dark Descent"),
+            normalize_title("Amnesia: The Dark Descent")
+        );
+        assert_eq!(
+            normalize_title("Director’s Cut"),
+            normalize_title("Director's Cut")
+        );
+        assert_eq!(
+            normalize_title("Sword & Sworcery"),
+            normalize_title("Sword and Sworcery")
+        );
         assert_eq!(normalize_title("LIMBO"), normalize_title("Limbo"));
         // Editions stay distinct on purpose.
-        assert_ne!(normalize_title("Tomb Raider"), normalize_title("Tomb Raider: Anniversary"));
+        assert_ne!(
+            normalize_title("Tomb Raider"),
+            normalize_title("Tomb Raider: Anniversary")
+        );
     }
 
     #[test]

@@ -17,5 +17,7 @@ pub fn reveal_in_finder(app: AppHandle, path: String) -> Result<(), String> {
         .parent()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or(path);
-    app.opener().open_path(parent, None::<&str>).map_err(|e| e.to_string())
+    app.opener()
+        .open_path(parent, None::<&str>)
+        .map_err(|e| e.to_string())
 }

@@ -18,7 +18,9 @@ pub fn launch_game(state: Db<'_>, app: AppHandle, game_id: u64) -> Result<(), St
         .ok_or_else(|| format!("game {game_id} not found"))?;
 
     // Pick best copy: installed > most recently played > first available
-    let copy = game.copies.iter()
+    let copy = game
+        .copies
+        .iter()
         .max_by(|a, b| {
             // First, prefer installed
             match (a.installed, b.installed) {
@@ -40,15 +42,22 @@ pub fn launch_game(state: Db<'_>, app: AppHandle, game_id: u64) -> Result<(), St
         Platform::Steam => format!("steam://rungameid/{}", copy.app_id),
         Platform::Gog => format!("goggalaxy://openGame/{}", copy.app_id),
         Platform::Epic => {
-            format!("com.epicgames.launcher://apps/{}?action=launch&silent=true", copy.app_id)
+            format!(
+                "com.epicgames.launcher://apps/{}?action=launch&silent=true",
+                copy.app_id
+            )
         }
     };
 
     drop(store);
-    app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn open_url(app: AppHandle, url: String) -> Result<(), String> {
-    app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
 }

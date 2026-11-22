@@ -42,7 +42,9 @@ fn steam_appids(g: &Game) -> Vec<u64> {
         .filter_map(|c| c.app_id.parse().ok())
         .collect();
     if let Some(m) = &g.steam_match {
-        if !ids.contains(&m.appid) { ids.push(m.appid); }
+        if !ids.contains(&m.appid) {
+            ids.push(m.appid);
+        }
     }
     ids
 }
@@ -63,13 +65,16 @@ enum FetchError {
 }
 
 impl<E: Into<anyhow::Error>> From<E> for FetchError {
-    fn from(e: E) -> Self { FetchError::Other(e.into()) }
+    fn from(e: E) -> Self {
+        FetchError::Other(e.into())
+    }
 }
 
 async fn get_json(req: reqwest::RequestBuilder) -> Result<serde_json::Value, FetchError> {
     let resp = req.send().await?;
     let status = resp.status();
-    if status == reqwest::StatusCode::TOO_MANY_REQUESTS || status == reqwest::StatusCode::FORBIDDEN {
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS || status == reqwest::StatusCode::FORBIDDEN
+    {
         return Err(FetchError::RateLimited);
     }
     Ok(resp.error_for_status()?.json().await?)
@@ -109,13 +114,34 @@ pub(crate) const MATCHER_REV: u32 = 2;
 /// Longer phrases first where one ends with another. Any other
 /// "<separator> X Edition" is handled by `strip_generic_edition`.
 const EDITION_SUFFIXES: &[&str] = &[
-    "game of the year edition", "game of the year", "goty edition", "goty",
-    "definitive edition", "enhanced edition", "complete edition", "ultimate edition",
-    "digital deluxe edition", "deluxe edition", "gold edition", "premium edition",
-    "special edition", "anniversary edition", "standard edition", "collector's edition",
-    "hd edition", "complete collection", "complete pack", "remastered", "remaster",
-    "director's cut", "director\u{2019}s cut", "the final cut", "final cut",
-    "complete", "classic", "hd",
+    "game of the year edition",
+    "game of the year",
+    "goty edition",
+    "goty",
+    "definitive edition",
+    "enhanced edition",
+    "complete edition",
+    "ultimate edition",
+    "digital deluxe edition",
+    "deluxe edition",
+    "gold edition",
+    "premium edition",
+    "special edition",
+    "anniversary edition",
+    "standard edition",
+    "collector's edition",
+    "hd edition",
+    "complete collection",
+    "complete pack",
+    "remastered",
+    "remaster",
+    "director's cut",
+    "director\u{2019}s cut",
+    "the final cut",
+    "final cut",
+    "complete",
+    "classic",
+    "hd",
 ];
 
 const SEPARATORS: [&str; 4] = [": ", " - ", " – ", " — "];
@@ -124,8 +150,14 @@ const SEPARATORS: [&str; 4] = [": ", " - ", " – ", " — "];
 /// I and X are left alone ("I Am Bread", "Mega Man X").
 fn numeral(word: &str) -> Option<&'static str> {
     Some(match word {
-        "ii" => "2", "iii" => "3", "iv" => "4", "v" => "5",
-        "vi" => "6", "vii" => "7", "viii" => "8", "ix" => "9",
+        "ii" => "2",
+        "iii" => "3",
+        "iv" => "4",
+        "v" => "5",
+        "vi" => "6",
+        "vii" => "7",
+        "viii" => "8",
+        "ix" => "9",
         _ => return None,
     })
 }
@@ -148,7 +180,9 @@ fn normalize(s: &str) -> String {
 /// ("Gothic" == "Gothic 1").
 fn base_key(s: &str) -> String {
     let mut w = words(&strip_edition(s));
-    if w.len() > 1 && w.last().is_some_and(|x| x == "1") { w.pop(); }
+    if w.len() > 1 && w.last().is_some_and(|x| x == "1") {
+        w.pop();
+    }
     w.concat()
 }
 
@@ -158,7 +192,10 @@ fn trim_seps(s: &str) -> &str {
 
 /// No ™/®/©, no alternate-language name after " / " ("Lost Castle / 失落城堡").
 fn clean_name(s: &str) -> String {
-    let s: String = s.chars().filter(|c| !matches!(c, '™' | '®' | '©')).collect();
+    let s: String = s
+        .chars()
+        .filter(|c| !matches!(c, '™' | '®' | '©'))
+        .collect();
     let s = s.split(" / ").next().unwrap_or(&s);
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -169,7 +206,9 @@ fn strip_known_suffix(s: &str) -> Option<String> {
         let ok = s.is_char_boundary(start)
             && s[start..].eq_ignore_ascii_case(suf)
             && s[..start].ends_with(|c: char| !c.is_alphanumeric());
-        if !ok { return None; }
+        if !ok {
+            return None;
+        }
         let mut rest = trim_seps(&s[..start]);
         // "Nioh: The Complete Edition" → "Nioh"
         if rest.len() > 4 && rest[rest.len() - 4..].eq_ignore_ascii_case(" the") {
@@ -182,10 +221,15 @@ fn strip_known_suffix(s: &str) -> Option<String> {
 /// "<title><separator>[The] <1–2 words> Edition" → "<title>"
 /// ("Overcooked: Gourmet Edition", "…: Spacer's Choice Edition").
 fn strip_generic_edition(s: &str) -> Option<String> {
-    let (pos, sep) = SEPARATORS.iter().filter_map(|sep| Some((s.rfind(sep)?, *sep))).max_by_key(|(p, _)| *p)?;
+    let (pos, sep) = SEPARATORS
+        .iter()
+        .filter_map(|sep| Some((s.rfind(sep)?, *sep)))
+        .max_by_key(|(p, _)| *p)?;
     let tail: Vec<&str> = s[pos + sep.len()..].split_whitespace().collect();
     let n = tail.len() - usize::from(tail.first().is_some_and(|w| w.eq_ignore_ascii_case("the")));
-    let is_edition = tail.last().is_some_and(|w| w.eq_ignore_ascii_case("edition"));
+    let is_edition = tail
+        .last()
+        .is_some_and(|w| w.eq_ignore_ascii_case("edition"));
     let head = trim_seps(&s[..pos]);
     // Longer tails are subtitles ("Ghostbusters: Spirits Unleashed Ecto Edition").
     (is_edition && (2..=3).contains(&n) && !head.is_empty()).then(|| head.to_string())
@@ -199,7 +243,10 @@ pub(crate) fn strip_edition(title: &str) -> String {
         if s.ends_with(')') {
             if let Some(i) = s.rfind('(') {
                 let rest = trim_seps(&s[..i]);
-                if !rest.is_empty() { s = rest.to_string(); continue; }
+                if !rest.is_empty() {
+                    s = rest.to_string();
+                    continue;
+                }
             }
         }
         match strip_known_suffix(&s).or_else(|| strip_generic_edition(&s)) {
@@ -244,20 +291,24 @@ pub(crate) fn pick_match(title: &str, year: u32, candidates: &[Candidate]) -> Op
     let full = normalize(&clean_name(title));
     let base = base_key(title);
     let most_reviews = |pred: &dyn Fn(&Candidate) -> bool| {
-        candidates.iter().filter(|c| pred(c)).max_by_key(|c| c.reviews)
+        candidates
+            .iter()
+            .filter(|c| pred(c))
+            .max_by_key(|c| c.reviews)
     };
     let has_subtitle = |c: &Candidate| {
         let name = clean_name(&c.name);
         SEPARATORS.iter().any(|sep| {
-            name.match_indices(sep).any(|(pos, _)| base_key(&name[..pos]) == base)
+            name.match_indices(sep)
+                .any(|(pos, _)| base_key(&name[..pos]) == base)
         })
     };
     let lower = title.to_lowercase();
     let check_remaster = year >= 2010 || lower.contains("original") || lower.contains("classic");
-    let not_remaster = |c: &Candidate| {
-        !check_remaster || year == 0 || c.year.is_none_or(|y| y <= year + 3)
-    };
-    let close_year = |c: &Candidate| year > 0 && c.year.is_some_and(|y| y + 10 >= year && y <= year + 1);
+    let not_remaster =
+        |c: &Candidate| !check_remaster || year == 0 || c.year.is_none_or(|y| y <= year + 3);
+    let close_year =
+        |c: &Candidate| year > 0 && c.year.is_some_and(|y| y + 10 >= year && y <= year + 1);
 
     most_reviews(&|c| normalize(&clean_name(&c.name)) == full)
         .or_else(|| most_reviews(&|c| base_key(&c.name) == base && not_remaster(c)))
@@ -268,11 +319,17 @@ pub(crate) fn pick_match(title: &str, year: u32, candidates: &[Candidate]) -> Op
                 _ => None,
             }
         })
-        .map(|c| SteamMatch { appid: c.appid, name: c.name.clone() })
+        .map(|c| SteamMatch {
+            appid: c.appid,
+            name: c.name.clone(),
+        })
 }
 
 fn unix_year(v: &serde_json::Value) -> Option<u32> {
-    let ts = v.as_i64().or_else(|| v.as_str()?.parse().ok()).filter(|&t| t > 0)?;
+    let ts = v
+        .as_i64()
+        .or_else(|| v.as_str()?.parse().ok())
+        .filter(|&t| t > 0)?;
     use chrono::Datelike;
     Some(chrono::DateTime::from_timestamp(ts, 0)?.year() as u32)
 }
@@ -284,21 +341,36 @@ async fn search_steam(client: &reqwest::Client, term: &str) -> Result<Vec<Candid
         "context": { "language": "english", "country_code": "US" },
         "data_request": { "include_reviews": true, "include_release": true },
     });
-    let v = get_json(client.get(SEARCH_URL).query(&[("input_json", input.to_string())])).await?;
-    let items = v["response"]["store_items"].as_array().cloned().unwrap_or_default();
+    let v = get_json(
+        client
+            .get(SEARCH_URL)
+            .query(&[("input_json", input.to_string())]),
+    )
+    .await?;
+    let items = v["response"]["store_items"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     Ok(items
         .iter()
         // type 0 = game (1 demo, 4 DLC, 11 soundtrack)
         .filter(|i| i["success"].as_i64() == Some(1) && i["type"].as_i64().unwrap_or(0) == 0)
-        .filter_map(|i| Some(Candidate {
-            appid: i["id"].as_u64()?,
-            name: i["name"].as_str()?.to_string(),
-            reviews: i["reviews"]["summary_filtered"]["review_count"].as_u64().unwrap_or(0) as u32,
-            year: [&i["release"]["steam_release_date"], &i["release"]["original_release_date"]]
+        .filter_map(|i| {
+            Some(Candidate {
+                appid: i["id"].as_u64()?,
+                name: i["name"].as_str()?.to_string(),
+                reviews: i["reviews"]["summary_filtered"]["review_count"]
+                    .as_u64()
+                    .unwrap_or(0) as u32,
+                year: [
+                    &i["release"]["steam_release_date"],
+                    &i["release"]["original_release_date"],
+                ]
                 .into_iter()
                 .filter_map(unix_year)
                 .min(),
-        }))
+            })
+        })
         .collect())
 }
 
@@ -314,12 +386,17 @@ async fn match_titles(app: &AppHandle, client: &reqwest::Client, now: i64) -> an
     let state = app.state::<Mutex<AppStore>>();
     let todo: Vec<(u64, String, u32)> = {
         let store = state.lock().unwrap();
-        store.data.games.iter()
+        store
+            .data
+            .games
+            .iter()
             .filter(|g| match_due(g, now))
             .map(|g| (g.id, g.title.clone(), g.year))
             .collect()
     };
-    if todo.is_empty() { return Ok(0); }
+    if todo.is_empty() {
+        return Ok(0);
+    }
     eprintln!("[Scores] matching {} titles on Steam", todo.len());
 
     let (mut matched, mut unsaved) = (0u32, 0u32);
@@ -328,16 +405,23 @@ async fn match_titles(app: &AppHandle, client: &reqwest::Client, now: i64) -> an
         let candidates = match paced(SEARCH_DELAY, || search_steam(client, &term)).await {
             Ok(c) => c,
             Err(FetchError::RateLimited) => {
-                if unsaved > 0 { state.lock().unwrap().save()?; }
+                if unsaved > 0 {
+                    state.lock().unwrap().save()?;
+                }
                 anyhow::bail!("title matching: still rate limited after {MAX_BACKOFFS} waits");
             }
-            Err(FetchError::Other(e)) => { eprintln!("[Scores] search {title:?}: {e:#}"); continue; }
+            Err(FetchError::Other(e)) => {
+                eprintln!("[Scores] search {title:?}: {e:#}");
+                continue;
+            }
         };
         let found = pick_match(&title, year, &candidates);
 
         let mut store = state.lock().unwrap();
         // The entry may have been merged away by a sync meanwhile; next run redoes it.
-        let Some(game) = store.data.games.iter_mut().find(|g| g.id == id) else { continue };
+        let Some(game) = store.data.games.iter_mut().find(|g| g.id == id) else {
+            continue;
+        };
         game.steam_match_checked_at = Some(now);
         game.steam_match_rev = MATCHER_REV;
         if let Some(m) = found {
@@ -346,9 +430,14 @@ async fn match_titles(app: &AppHandle, client: &reqwest::Client, now: i64) -> an
             matched += 1;
         }
         unsaved += 1;
-        if unsaved >= SAVE_EVERY { store.save()?; unsaved = 0; }
+        if unsaved >= SAVE_EVERY {
+            store.save()?;
+            unsaved = 0;
+        }
     }
-    if unsaved > 0 { state.lock().unwrap().save()?; }
+    if unsaved > 0 {
+        state.lock().unwrap().save()?;
+    }
     Ok(matched)
 }
 
@@ -397,10 +486,13 @@ pub(crate) struct SteamReviews {
 
 impl StoreItem {
     fn reviews(&self) -> SteamReviews {
-        let s = self.reviews.as_ref().and_then(|r| r.summary_filtered.as_ref());
+        let s = self
+            .reviews
+            .as_ref()
+            .and_then(|r| r.summary_filtered.as_ref());
         SteamReviews {
             percent: s.map_or(0, |s| s.percent_positive),
-            count:   s.map_or(0, |s| s.review_count),
+            count: s.map_or(0, |s| s.review_count),
         }
     }
 }
@@ -422,7 +514,12 @@ async fn get_items(client: &reqwest::Client, appids: &[u64]) -> anyhow::Result<V
         .json()
         .await
         .context("unexpected response")?;
-    Ok(resp.response.store_items.into_iter().filter(|i| i.success == 1).collect())
+    Ok(resp
+        .response
+        .store_items
+        .into_iter()
+        .filter(|i| i.success == 1)
+        .collect())
 }
 
 /// Fetch review summaries for `appids`. Apps Steam doesn't know are left out;
@@ -444,7 +541,10 @@ async fn fetch_steam_reviews(
 /// A game with several Steam apps takes the one with the most reviews.
 /// Games with no Steam app, or whose apps Steam didn't return, are untouched.
 /// Returns the IDs of games whose values changed.
-pub(crate) fn apply_steam_reviews(games: &mut [Game], reviews: &HashMap<u64, SteamReviews>) -> Vec<u64> {
+pub(crate) fn apply_steam_reviews(
+    games: &mut [Game],
+    reviews: &HashMap<u64, SteamReviews>,
+) -> Vec<u64> {
     let mut changed = Vec::new();
     for g in games {
         let best = steam_appids(g)
@@ -474,7 +574,10 @@ pub(crate) async fn refresh_steam_reviews(
     let appids: Vec<u64> = {
         let store = store.lock().unwrap();
         let mut seen = HashSet::new();
-        store.data.games.iter()
+        store
+            .data
+            .games
+            .iter()
             .flat_map(steam_appids)
             .filter(|id| seen.insert(*id))
             .collect()
@@ -491,7 +594,13 @@ pub(crate) async fn refresh_steam_reviews(
         return Ok(vec![]);
     }
     store.save()?;
-    Ok(store.data.games.iter().filter(|g| changed.contains(&g.id)).cloned().collect())
+    Ok(store
+        .data
+        .games
+        .iter()
+        .filter(|g| changed.contains(&g.id))
+        .cloned()
+        .collect())
 }
 
 // ───────────────────────────── 3. Metacritic ─────────────────────────────
@@ -519,12 +628,19 @@ pub(crate) fn parse_metacritic(v: &serde_json::Value, appid: u64) -> Option<Meta
     let mc = entry.get("data")?.get("metacritic")?;
     let score = i32::try_from(mc.get("score")?.as_i64()?).ok()?;
     // Drop Steam's tracking query (`?ftag=…`).
-    let url = mc.get("url").and_then(|u| u.as_str()).map(|u| u.split('?').next().unwrap_or(u).to_string());
+    let url = mc
+        .get("url")
+        .and_then(|u| u.as_str())
+        .map(|u| u.split('?').next().unwrap_or(u).to_string());
     Some(Metascore { score, url })
 }
 
-async fn fetch_metacritic(client: &reqwest::Client, appid: u64) -> Result<Option<Metascore>, FetchError> {
-    let url = format!("https://store.steampowered.com/api/appdetails?appids={appid}&filters=metacritic");
+async fn fetch_metacritic(
+    client: &reqwest::Client,
+    appid: u64,
+) -> Result<Option<Metascore>, FetchError> {
+    let url =
+        format!("https://store.steampowered.com/api/appdetails?appids={appid}&filters=metacritic");
     let v = get_json(client.get(&url)).await?;
     Ok(parse_metacritic(&v, appid))
 }
@@ -549,14 +665,21 @@ pub(crate) fn apply_metacritic(g: &mut Game, found: Option<&Metascore>, now: i64
     changed
 }
 
-async fn refresh_metacritic(app: &AppHandle, client: &reqwest::Client, now: i64) -> anyhow::Result<u32> {
+async fn refresh_metacritic(
+    app: &AppHandle,
+    client: &reqwest::Client,
+    now: i64,
+) -> anyhow::Result<u32> {
     let state = app.state::<Mutex<AppStore>>();
 
     // Keyed by Steam app IDs, not game IDs: a sync running meanwhile may merge
     // duplicates and change which entry holds a copy.
     let todo: Vec<Vec<u64>> = {
         let store = state.lock().unwrap();
-        store.data.games.iter()
+        store
+            .data
+            .games
+            .iter()
             .filter(|g| due(g.metacritic_checked_at, now))
             .map(steam_appids)
             .filter(|ids| !ids.is_empty())
@@ -576,7 +699,9 @@ async fn refresh_metacritic(app: &AppHandle, client: &reqwest::Client, now: i64)
             match paced(MC_DELAY, || fetch_metacritic(client, appid)).await {
                 Ok(r) => found = r,
                 Err(FetchError::RateLimited) => {
-                    if unsaved > 0 { state.lock().unwrap().save()?; }
+                    if unsaved > 0 {
+                        state.lock().unwrap().save()?;
+                    }
                     anyhow::bail!("Metacritic: still rate limited after {MAX_BACKOFFS} waits");
                 }
                 Err(FetchError::Other(e)) => {
@@ -584,16 +709,23 @@ async fn refresh_metacritic(app: &AppHandle, client: &reqwest::Client, now: i64)
                     complete = false; // don't mark checked; retry next run
                 }
             }
-            if found.is_some() { break; }
+            if found.is_some() {
+                break;
+            }
         }
         if !complete && found.is_none() {
             continue;
         }
 
         let mut store = state.lock().unwrap();
-        let Some(game) = store.data.games.iter_mut().find(|g| {
-            steam_appids(g).iter().any(|id| appids.contains(id))
-        }) else { continue };
+        let Some(game) = store
+            .data
+            .games
+            .iter_mut()
+            .find(|g| steam_appids(g).iter().any(|id| appids.contains(id)))
+        else {
+            continue;
+        };
 
         let snapshot = apply_metacritic(game, found.as_ref(), now).then(|| game.clone());
         checked += 1;
@@ -624,9 +756,9 @@ pub(crate) fn parse_steam_appid(input: &str) -> Option<u64> {
         return positive(id);
     }
     const MARKERS: [&str; 6] = [
-        "/app/",              // store.steampowered.com/app/620/…, steamdb.info/app/620/
-        "/apps/",             // cdn …/steam/apps/620/header.jpg
-        "s.team/a/",          // short share links
+        "/app/",     // store.steampowered.com/app/620/…, steamdb.info/app/620/
+        "/apps/",    // cdn …/steam/apps/620/header.jpg
+        "s.team/a/", // short share links
         "steam://store/",
         "steam://run/",
         "steam://rungameid/",
@@ -646,13 +778,19 @@ fn clear_steam_scores(g: &mut Game) {
     g.user_score_reviews = None;
     g.metacritic = None;
     g.metacritic_checked_at = None;
-    if g.links.get("metacritic").is_some_and(|u| u.contains("metacritic.com/game/pc/")) {
+    if g.links
+        .get("metacritic")
+        .is_some_and(|u| u.contains("metacritic.com/game/pc/"))
+    {
         g.links.remove("metacritic");
     }
 }
 
 fn find_unowned(games: &mut [Game], id: u64) -> Result<&mut Game, String> {
-    let game = games.iter_mut().find(|g| g.id == id).ok_or("Game not found.")?;
+    let game = games
+        .iter_mut()
+        .find(|g| g.id == id)
+        .ok_or("Game not found.")?;
     if has_steam_copy(game) {
         return Err("This game is owned on Steam; its scores come from that copy.".into());
     }
@@ -682,8 +820,7 @@ pub async fn set_steam_match(
     game_id: u64,
     input: String,
 ) -> Result<Game, String> {
-    let appid = parse_steam_appid(&input)
-        .ok_or("Not a Steam store link or app ID.")?;
+    let appid = parse_steam_appid(&input).ok_or("Not a Steam store link or app ID.")?;
     find_unowned(&mut state.lock().unwrap().data.games, game_id)?; // fail fast, before the request
 
     let client = reqwest::Client::builder()
@@ -701,7 +838,10 @@ pub async fn set_steam_match(
     let reviews = HashMap::from([(appid, item.reviews())]);
     let game = edit_unowned(state.inner(), game_id, |g| {
         clear_steam_scores(g);
-        g.steam_match = Some(SteamMatch { appid, name: item.name.clone() });
+        g.steam_match = Some(SteamMatch {
+            appid,
+            name: item.name.clone(),
+        });
         g.steam_match_manual = true;
         g.steam_match_checked_at = Some(now);
         apply_steam_reviews(std::slice::from_mut(g), &reviews);
@@ -746,7 +886,9 @@ static PENDING: AtomicBool = AtomicBool::new(false);
 
 struct RunningGuard;
 impl Drop for RunningGuard {
-    fn drop(&mut self) { RUNNING.store(false, Ordering::SeqCst); }
+    fn drop(&mut self) {
+        RUNNING.store(false, Ordering::SeqCst);
+    }
 }
 
 /// Start the background score refresh, or queue another pass if one is running.
@@ -760,7 +902,9 @@ pub(crate) fn spawn_score_refresh(app: AppHandle) {
         loop {
             PENDING.store(false, Ordering::SeqCst);
             refresh_all(&app).await;
-            if !PENDING.load(Ordering::SeqCst) { break; }
+            if !PENDING.load(Ordering::SeqCst) {
+                break;
+            }
         }
     });
 }
@@ -774,7 +918,10 @@ pub fn start_score_refresh(app: AppHandle) {
 /// One pass of all three phases. A failing phase is logged and the next one
 /// still runs; whatever didn't finish is picked up by the next pass.
 async fn refresh_all(app: &AppHandle) {
-    let client = match reqwest::Client::builder().timeout(Duration::from_secs(20)).build() {
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+    {
         Ok(c) => c,
         Err(e) => return eprintln!("[Scores] client: {e}"),
     };
@@ -786,7 +933,9 @@ async fn refresh_all(app: &AppHandle) {
         Err(e) => eprintln!("[Scores] {e:#}"),
     }
     match refresh_steam_reviews(app.state::<Mutex<AppStore>>().inner(), &client).await {
-        Ok(games) if !games.is_empty() => { app.emit(EVENT, games).ok(); }
+        Ok(games) if !games.is_empty() => {
+            app.emit(EVENT, games).ok();
+        }
         Ok(_) => {}
         Err(e) => eprintln!("[Scores] user reviews: {e:#}"),
     }
@@ -804,39 +953,87 @@ mod tests {
 
     fn game(copies: &[(Platform, &str)]) -> Game {
         Game {
-            id: 1, title: "X".into(), cover: None, rating: 0, status: GameStatus::Backlog,
-            tags: vec![], note: String::new(), genre: vec![], dev: String::new(), year: 0,
-            metacritic: None, metacritic_checked_at: None,
-            opencritic: None, user_score: None, user_score_reviews: None,
-            steam_match: None, steam_match_checked_at: None, steam_match_manual: false, steam_match_rev: 0,
-            links: Default::default(), custom: vec![],
-            copies: copies.iter().map(|(p, id)| GameCopy {
-                platform: p.clone(), app_id: (*id).into(), account_id: None,
-                installed: false, playtime: None, last: None,
-            }).collect(),
+            id: 1,
+            title: "X".into(),
+            cover: None,
+            rating: 0,
+            status: GameStatus::Backlog,
+            tags: vec![],
+            note: String::new(),
+            genre: vec![],
+            dev: String::new(),
+            year: 0,
+            metacritic: None,
+            metacritic_checked_at: None,
+            opencritic: None,
+            user_score: None,
+            user_score_reviews: None,
+            steam_match: None,
+            steam_match_checked_at: None,
+            steam_match_manual: false,
+            steam_match_rev: 0,
+            links: Default::default(),
+            custom: vec![],
+            copies: copies
+                .iter()
+                .map(|(p, id)| GameCopy {
+                    platform: p.clone(),
+                    app_id: (*id).into(),
+                    account_id: None,
+                    installed: false,
+                    playtime: None,
+                    last: None,
+                })
+                .collect(),
         }
     }
 
     fn reviews(list: &[(u64, i32, u32)]) -> HashMap<u64, SteamReviews> {
-        list.iter().map(|&(id, percent, count)| (id, SteamReviews { percent, count })).collect()
+        list.iter()
+            .map(|&(id, percent, count)| (id, SteamReviews { percent, count }))
+            .collect()
     }
 
     fn cands(list: &[(u64, &str)]) -> Vec<Candidate> {
-        list.iter().map(|&(appid, n)| Candidate { appid, name: n.into(), reviews: 0, year: None }).collect()
+        list.iter()
+            .map(|&(appid, n)| Candidate {
+                appid,
+                name: n.into(),
+                reviews: 0,
+                year: None,
+            })
+            .collect()
     }
 
     fn cand(appid: u64, name: &str, reviews: u32, year: u32) -> Candidate {
-        Candidate { appid, name: name.into(), reviews, year: Some(year) }
+        Candidate {
+            appid,
+            name: name.into(),
+            reviews,
+            year: Some(year),
+        }
     }
 
     // ── matching ──
 
     #[test]
     fn strips_edition_labels() {
-        assert_eq!(strip_edition("The Witcher 3: Wild Hunt - Game of the Year Edition"), "The Witcher 3: Wild Hunt");
-        assert_eq!(strip_edition("Heroes of Might and Magic 3: Complete"), "Heroes of Might and Magic 3");
-        assert_eq!(strip_edition("Heroes® of Might & Magic® III - HD Edition"), "Heroes of Might & Magic III");
-        assert_eq!(strip_edition("DEATH STRANDING DIRECTOR'S CUT"), "DEATH STRANDING");
+        assert_eq!(
+            strip_edition("The Witcher 3: Wild Hunt - Game of the Year Edition"),
+            "The Witcher 3: Wild Hunt"
+        );
+        assert_eq!(
+            strip_edition("Heroes of Might and Magic 3: Complete"),
+            "Heroes of Might and Magic 3"
+        );
+        assert_eq!(
+            strip_edition("Heroes® of Might & Magic® III - HD Edition"),
+            "Heroes of Might & Magic III"
+        );
+        assert_eq!(
+            strip_edition("DEATH STRANDING DIRECTOR'S CUT"),
+            "DEATH STRANDING"
+        );
         assert_eq!(strip_edition("Tomb Raider (GOTY)"), "Tomb Raider");
         // Never strips to nothing, never cuts inside a word.
         assert_eq!(strip_edition("Complete"), "Complete");
@@ -846,70 +1043,153 @@ mod tests {
 
     #[test]
     fn exact_title_wins_over_edition_match() {
-        let c = cands(&[(632470, "Disco Elysium - The Final Cut"), (1233220, "Disco Elysium - The Final Cut Soundtrack")]);
-        assert_eq!(pick_match("Disco Elysium - The Final Cut", 2021, &c).unwrap().appid, 632470);
-        let c = cands(&[(1850570, "DEATH STRANDING DIRECTOR'S CUT"), (1190460, "DEATH STRANDING")]);
-        assert_eq!(pick_match("Death Stranding", 2019, &c).unwrap().appid, 1190460);
+        let c = cands(&[
+            (632470, "Disco Elysium - The Final Cut"),
+            (1233220, "Disco Elysium - The Final Cut Soundtrack"),
+        ]);
+        assert_eq!(
+            pick_match("Disco Elysium - The Final Cut", 2021, &c)
+                .unwrap()
+                .appid,
+            632470
+        );
+        let c = cands(&[
+            (1850570, "DEATH STRANDING DIRECTOR'S CUT"),
+            (1190460, "DEATH STRANDING"),
+        ]);
+        assert_eq!(
+            pick_match("Death Stranding", 2019, &c).unwrap().appid,
+            1190460
+        );
     }
 
     #[test]
     fn matches_across_edition_labels_and_numerals() {
-        let c = cands(&[(391220, "Rise of the Tomb Raider™"), (203160, "Tomb Raider Game of the Year")]);
+        let c = cands(&[
+            (391220, "Rise of the Tomb Raider™"),
+            (203160, "Tomb Raider Game of the Year"),
+        ]);
         assert_eq!(pick_match("Tomb Raider", 2013, &c).unwrap().appid, 203160);
-        let c = cands(&[(3809850, "Heroes of Might and Magic III Remake"), (297000, "Heroes® of Might & Magic® III - HD Edition")]);
-        assert_eq!(pick_match("Heroes of Might and Magic 3: Complete", 1999, &c).unwrap().appid, 297000);
+        let c = cands(&[
+            (3809850, "Heroes of Might and Magic III Remake"),
+            (297000, "Heroes® of Might & Magic® III - HD Edition"),
+        ]);
+        assert_eq!(
+            pick_match("Heroes of Might and Magic 3: Complete", 1999, &c)
+                .unwrap()
+                .appid,
+            297000
+        );
         // Same match level → most reviews wins.
-        let mut c = cands(&[(4921760, "Heroes Of Might And Magic III"), (297000, "Heroes® of Might & Magic® III - HD Edition")]);
+        let mut c = cands(&[
+            (4921760, "Heroes Of Might And Magic III"),
+            (297000, "Heroes® of Might & Magic® III - HD Edition"),
+        ]);
         c[0].reviews = 268;
         c[1].reviews = 20_305;
-        assert_eq!(pick_match("Heroes of Might and Magic 3: Complete", 1999, &c).unwrap().appid, 297000);
+        assert_eq!(
+            pick_match("Heroes of Might and Magic 3: Complete", 1999, &c)
+                .unwrap()
+                .appid,
+            297000
+        );
         let c = cands(&[(870780, "CONTROL Ultimate Edition")]);
-        assert_eq!(pick_match("Control", 2019, &c).unwrap().name, "CONTROL Ultimate Edition");
+        assert_eq!(
+            pick_match("Control", 2019, &c).unwrap().name,
+            "CONTROL Ultimate Edition"
+        );
     }
 
     #[test]
     fn rejects_sequels_and_extras() {
-        let c = cands(&[(1145350, "Hades II"), (755800, "Hades' Star"), (1206340, "Hades Original Soundtrack")]);
+        let c = cands(&[
+            (1145350, "Hades II"),
+            (755800, "Hades' Star"),
+            (1206340, "Hades Original Soundtrack"),
+        ]);
         assert_eq!(pick_match("Hades", 2020, &c), None);
         let c = cands(&[(228280, "Baldur's Gate: Enhanced Edition")]);
-        assert_eq!(pick_match("Baldur's Gate II: Enhanced Edition", 2013, &c), None);
+        assert_eq!(
+            pick_match("Baldur's Gate II: Enhanced Edition", 2013, &c),
+            None
+        );
         assert_eq!(pick_match("Fall Guys", 2020, &[]), None);
     }
 
     #[test]
     fn strips_parentheticals_alt_names_and_generic_editions() {
         assert_eq!(strip_edition("DOOM (2016)"), "DOOM");
-        assert_eq!(strip_edition("Sam & Max Save the World (2007 Original Version)"), "Sam & Max Save the World");
+        assert_eq!(
+            strip_edition("Sam & Max Save the World (2007 Original Version)"),
+            "Sam & Max Save the World"
+        );
         assert_eq!(strip_edition("Lost Castle / 失落城堡"), "Lost Castle");
         assert_eq!(strip_edition("Nioh: The Complete Edition"), "Nioh");
-        assert_eq!(strip_edition("Bear With Me: The Complete Collection"), "Bear With Me");
+        assert_eq!(
+            strip_edition("Bear With Me: The Complete Collection"),
+            "Bear With Me"
+        );
         assert_eq!(strip_edition("Overcooked: Gourmet Edition"), "Overcooked");
-        assert_eq!(strip_edition("The Outer Worlds: Spacer's Choice Edition"), "The Outer Worlds");
-        assert_eq!(strip_edition("STAR WARS™ Battlefront™ II: Celebration Edition"), "STAR WARS Battlefront II");
-        assert_eq!(strip_edition("XCOM: Enemy Unknown Complete Pack"), "XCOM: Enemy Unknown");
+        assert_eq!(
+            strip_edition("The Outer Worlds: Spacer's Choice Edition"),
+            "The Outer Worlds"
+        );
+        assert_eq!(
+            strip_edition("STAR WARS™ Battlefront™ II: Celebration Edition"),
+            "STAR WARS Battlefront II"
+        );
+        assert_eq!(
+            strip_edition("XCOM: Enemy Unknown Complete Pack"),
+            "XCOM: Enemy Unknown"
+        );
         assert_eq!(strip_edition("Fallout Classic"), "Fallout");
         // A subtitle that merely ends in "Edition"-less words stays.
-        assert_eq!(strip_edition("Shadowrun: Hong Kong"), "Shadowrun: Hong Kong");
-        assert_eq!(strip_edition("Halo: The Master Chief Collection"), "Halo: The Master Chief Collection");
-        assert_eq!(strip_edition("Ghostbusters: Spirits Unleashed Ecto Edition"), "Ghostbusters: Spirits Unleashed Ecto Edition");
+        assert_eq!(
+            strip_edition("Shadowrun: Hong Kong"),
+            "Shadowrun: Hong Kong"
+        );
+        assert_eq!(
+            strip_edition("Halo: The Master Chief Collection"),
+            "Halo: The Master Chief Collection"
+        );
+        assert_eq!(
+            strip_edition("Ghostbusters: Spirits Unleashed Ecto Edition"),
+            "Ghostbusters: Spirits Unleashed Ecto Edition"
+        );
     }
 
     #[test]
     fn matches_steam_subtitles_and_cleaned_names() {
-        let c = vec![cand(2900640, "TOEM 2", 900, 2026), cand(1307580, "TOEM: A Photo Adventure", 20_000, 2021)];
+        let c = vec![
+            cand(2900640, "TOEM 2", 900, 2026),
+            cand(1307580, "TOEM: A Photo Adventure", 20_000, 2021),
+        ];
         assert_eq!(pick_match("TOEM", 2021, &c).unwrap().appid, 1307580);
         let c = vec![cand(211600, "Thief Gold (1999)", 4_000, 1998)]; // Steam's original_release_date
         assert_eq!(pick_match("Thief™ Gold", 1998, &c).unwrap().appid, 211600);
-        let c = vec![cand(2445690, "Lost Castle 2", 5_000, 2024), cand(434650, "Lost Castle / 失落城堡", 30_000, 2016)];
+        let c = vec![
+            cand(2445690, "Lost Castle 2", 5_000, 2024),
+            cand(434650, "Lost Castle / 失落城堡", 30_000, 2016),
+        ];
         assert_eq!(pick_match("Lost Castle", 2016, &c).unwrap().appid, 434650);
-        let c = vec![cand(1297900, "Gothic 1 Remake", 9_000, 2025), cand(65540, "Gothic 1", 6_000, 2008)];
+        let c = vec![
+            cand(1297900, "Gothic 1 Remake", 9_000, 2025),
+            cand(65540, "Gothic 1", 6_000, 2008),
+        ];
         assert_eq!(pick_match("Gothic", 2001, &c).unwrap().appid, 65540);
         // Steam released earlier than the store year: fine (Epic 2023, Steam 2017).
-        let c = vec![cand(469600, "Legion TD 2 - Multiplayer Tower Defense", 20_000, 2017)];
+        let c = vec![cand(
+            469600,
+            "Legion TD 2 - Multiplayer Tower Defense",
+            20_000,
+            2017,
+        )];
         assert_eq!(pick_match("Legion TD 2", 2023, &c).unwrap().appid, 469600);
         // Several subtitled apps (episodes, a series): ambiguous, no match.
-        let c = vec![cand(437160, "The Lion's Song: Episode 1 - Silence", 9_000, 2016),
-                     cand(477030, "The Lion's Song: Episode 4 - Closure", 900, 2017)];
+        let c = vec![
+            cand(437160, "The Lion's Song: Episode 1 - Silence", 9_000, 2016),
+            cand(477030, "The Lion's Song: Episode 4 - Closure", 900, 2017),
+        ];
         assert_eq!(pick_match("The Lion's Song", 2017, &c), None);
     }
 
@@ -919,7 +1199,12 @@ mod tests {
         assert_eq!(pick_match("Fallout Classic", 1997, &c), None);
         let c = vec![cand(1307580, "TOEM: A Photo Adventure", 20_000, 2021)];
         assert_eq!(pick_match("TOEM", 0, &c), None);
-        let c = vec![Candidate { appid: 1, name: "TOEM: A Photo Adventure".into(), reviews: 1, year: None }];
+        let c = vec![Candidate {
+            appid: 1,
+            name: "TOEM: A Photo Adventure".into(),
+            reviews: 1,
+            year: None,
+        }];
         assert_eq!(pick_match("TOEM", 2021, &c), None);
         // Sequels with a subtitle aren't subtitles of the original.
         let c = vec![cand(1449110, "The Outer Worlds 2: Something", 50_000, 2025)];
@@ -927,19 +1212,36 @@ mod tests {
         // Much older franchise entry with a subtitle isn't this game either.
         let c = vec![cand(6900, "Hitman: Codename 47", 5_000, 2000)];
         assert_eq!(pick_match("HITMAN", 2019, &c), None);
-        let c = vec![cand(203140, "Hitman: Absolution", 40_000, 2012), cand(6900, "Hitman: Codename 47", 5_000, 2000)];
+        let c = vec![
+            cand(203140, "Hitman: Absolution", 40_000, 2012),
+            cand(6900, "Hitman: Codename 47", 5_000, 2000),
+        ];
         assert_eq!(pick_match("HITMAN", 2019, &c), None);
     }
 
     #[test]
     fn edition_match_rejects_much_later_remasters() {
         let c = vec![cand(1440440, "Sam & Max Save the World", 3_000, 2020)];
-        assert_eq!(pick_match("Sam & Max Save the World (2007 Original Version)", 2007, &c), None);
+        assert_eq!(
+            pick_match("Sam & Max Save the World (2007 Original Version)", 2007, &c),
+            None
+        );
         let c = vec![cand(2477010, "Ticket to Ride®", 2_000, 2024)];
-        assert_eq!(pick_match("Ticket To Ride: Classic Edition", 2019, &c), None);
+        assert_eq!(
+            pick_match("Ticket To Ride: Classic Edition", 2019, &c),
+            None
+        );
         // Up to 3 years later is the same game in a fuller edition.
-        let c = vec![cand(1850570, "DEATH STRANDING DIRECTOR'S CUT", 30_000, 2022)];
-        assert_eq!(pick_match("Death Stranding", 2019, &c).unwrap().appid, 1850570);
+        let c = vec![cand(
+            1850570,
+            "DEATH STRANDING DIRECTOR'S CUT",
+            30_000,
+            2022,
+        )];
+        assert_eq!(
+            pick_match("Death Stranding", 2019, &c).unwrap().appid,
+            1850570
+        );
         // Unknown game year: no check.
         let c = vec![cand(1440440, "Sam & Max Save the World", 3_000, 2020)];
         assert!(pick_match("Sam & Max Save the World (Original)", 0, &c).is_some());
@@ -964,27 +1266,45 @@ mod tests {
     #[test]
     fn matched_app_feeds_scores_only_without_steam_copy() {
         let mut g = game(&[(Platform::Gog, "1207658930")]);
-        g.steam_match = Some(SteamMatch { appid: 292030, name: "The Witcher 3".into() });
+        g.steam_match = Some(SteamMatch {
+            appid: 292030,
+            name: "The Witcher 3".into(),
+        });
         assert_eq!(steam_appids(&g), vec![292030]);
         let mut games = vec![g];
-        assert_eq!(apply_steam_reviews(&mut games, &reviews(&[(292030, 97, 800_000)])).len(), 1);
+        assert_eq!(
+            apply_steam_reviews(&mut games, &reviews(&[(292030, 97, 800_000)])).len(),
+            1
+        );
         assert_eq!(games[0].user_score, Some(97));
     }
 
     #[test]
     fn parses_steam_links_and_ids() {
         for (input, id) in [
-            ("https://store.steampowered.com/app/292030/The_Witcher_3_Wild_Hunt/", 292030),
+            (
+                "https://store.steampowered.com/app/292030/The_Witcher_3_Wild_Hunt/",
+                292030,
+            ),
             ("store.steampowered.com/app/620", 620),
             ("  620  ", 620),
             ("https://steamdb.info/app/1145360/charts/", 1145360),
             ("https://s.team/a/413150", 413150),
             ("steam://store/632470", 632470),
-            ("https://cdn.akamai.steamstatic.com/steam/apps/297000/header.jpg", 297000),
+            (
+                "https://cdn.akamai.steamstatic.com/steam/apps/297000/header.jpg",
+                297000,
+            ),
         ] {
             assert_eq!(parse_steam_appid(input), Some(id), "{input}");
         }
-        for bad in ["", "0", "hades", "https://www.gog.com/en/game/hades", "https://store.steampowered.com/app/"] {
+        for bad in [
+            "",
+            "0",
+            "hades",
+            "https://www.gog.com/en/game/hades",
+            "https://store.steampowered.com/app/",
+        ] {
             assert_eq!(parse_steam_appid(bad), None, "{bad}");
         }
     }
@@ -994,12 +1314,18 @@ mod tests {
         let mut g = game(&[(Platform::Gog, "1")]);
         g.user_score = Some(90);
         g.metacritic = Some(88);
-        g.links.insert("metacritic".into(), "https://www.metacritic.com/game/pc/hades".into());
+        g.links.insert(
+            "metacritic".into(),
+            "https://www.metacritic.com/game/pc/hades".into(),
+        );
         clear_steam_scores(&mut g);
         assert_eq!((g.user_score, g.metacritic), (None, None));
         assert!(!g.links.contains_key("metacritic"));
 
-        g.links.insert("metacritic".into(), "https://www.metacritic.com/game/hades/".into());
+        g.links.insert(
+            "metacritic".into(),
+            "https://www.metacritic.com/game/hades/".into(),
+        );
         clear_steam_scores(&mut g);
         assert!(g.links.contains_key("metacritic"));
     }
@@ -1009,7 +1335,10 @@ mod tests {
     #[test]
     fn sets_percent_and_count() {
         let mut games = vec![game(&[(Platform::Steam, "620")])];
-        assert_eq!(apply_steam_reviews(&mut games, &reviews(&[(620, 98, 393_276)])), vec![1]);
+        assert_eq!(
+            apply_steam_reviews(&mut games, &reviews(&[(620, 98, 393_276)])),
+            vec![1]
+        );
         assert_eq!(games[0].user_score, Some(98));
         assert_eq!(games[0].user_score_reviews, Some(393_276));
         // Same values again → nothing changed, no save needed.
@@ -1026,7 +1355,10 @@ mod tests {
 
     #[test]
     fn picks_steam_copy_with_most_reviews() {
-        let mut games = vec![game(&[(Platform::Steam, "2130"), (Platform::Steam, "2100")])];
+        let mut games = vec![game(&[
+            (Platform::Steam, "2130"),
+            (Platform::Steam, "2100"),
+        ])];
         apply_steam_reviews(&mut games, &reviews(&[(2130, 76, 51), (2100, 89, 9_431)]));
         assert_eq!(games[0].user_score, Some(89));
     }
@@ -1047,9 +1379,13 @@ mod tests {
     fn parses_appdetails_shapes() {
         let with = serde_json::json!({"620": {"success": true, "data": {"metacritic": {
             "score": 95, "url": "https://www.metacritic.com/game/pc/portal-2?ftag=MCD-06-10aaa1f"}}}});
-        assert_eq!(parse_metacritic(&with, 620), Some(Metascore {
-            score: 95, url: Some("https://www.metacritic.com/game/pc/portal-2".into()),
-        }));
+        assert_eq!(
+            parse_metacritic(&with, 620),
+            Some(Metascore {
+                score: 95,
+                url: Some("https://www.metacritic.com/game/pc/portal-2".into()),
+            })
+        );
         // No Metascore: `data` is an empty array.
         let none = serde_json::json!({"3527290": {"success": true, "data": []}});
         assert_eq!(parse_metacritic(&none, 3527290), None);
@@ -1063,9 +1399,15 @@ mod tests {
         g.metacritic = Some(90);
         g.links.insert("metacritic".into(), "https://custom".into());
         assert!(!apply_metacritic(&mut g, None, 100));
-        assert_eq!((g.metacritic, g.metacritic_checked_at), (Some(90), Some(100)));
+        assert_eq!(
+            (g.metacritic, g.metacritic_checked_at),
+            (Some(90), Some(100))
+        );
 
-        let mc = Metascore { score: 95, url: Some("https://mc/portal-2".into()) };
+        let mc = Metascore {
+            score: 95,
+            url: Some("https://mc/portal-2".into()),
+        };
         assert!(apply_metacritic(&mut g, Some(&mc), 200));
         assert_eq!(g.metacritic, Some(95));
         assert_eq!(g.links["metacritic"], "https://custom");
@@ -1084,7 +1426,9 @@ mod tests {
     #[ignore]
     async fn live_fetch_parses_real_response() {
         let client = reqwest::Client::new();
-        let r = fetch_steam_reviews(&client, &[620, 999_999_999]).await.unwrap();
+        let r = fetch_steam_reviews(&client, &[620, 999_999_999])
+            .await
+            .unwrap();
         let portal = r.get(&620).expect("Portal 2 present");
         assert!(portal.count > 100_000 && (90..=100).contains(&portal.percent));
         assert!(!r.contains_key(&999_999_999));
@@ -1094,7 +1438,9 @@ mod tests {
     #[ignore]
     async fn live_metacritic() {
         let client = reqwest::Client::new();
-        let Ok(Some(mc)) = fetch_metacritic(&client, 620).await else { panic!("no Metascore for Portal 2") };
+        let Ok(Some(mc)) = fetch_metacritic(&client, 620).await else {
+            panic!("no Metascore for Portal 2")
+        };
         assert_eq!(mc.score, 95);
         assert!(matches!(fetch_metacritic(&client, 3527290).await, Ok(None)));
     }
@@ -1104,7 +1450,11 @@ mod tests {
     async fn live_matching() {
         let client = reqwest::Client::new();
         for (title, year, expected) in [
-            ("The Witcher 3: Wild Hunt - Game of the Year Edition", 2016, Some(292030)),
+            (
+                "The Witcher 3: Wild Hunt - Game of the Year Edition",
+                2016,
+                Some(292030),
+            ),
             ("Disco Elysium - The Final Cut", 2021, Some(632470)),
             // Pre-2010: no remaster check, so the HD Edition (2015) is accepted.
             ("Heroes of Might and Magic 3: Complete", 1999, Some(297000)),
@@ -1120,7 +1470,9 @@ mod tests {
             ("Fallout Classic", 1997, None), // must not become Fallout: New Vegas
         ] {
             tokio::time::sleep(Duration::from_millis(500)).await;
-            let Ok(c) = search_steam(&client, &strip_edition(title)).await else { panic!("search failed") };
+            let Ok(c) = search_steam(&client, &strip_edition(title)).await else {
+                panic!("search failed")
+            };
             let got = pick_match(title, year, &c);
             println!("{title:?} → {got:?}");
             assert_eq!(got.map(|m| m.appid), expected, "{title}");

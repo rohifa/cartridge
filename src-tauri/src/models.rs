@@ -78,13 +78,13 @@ pub struct Game {
     pub id: u64,
     pub title: String,
     pub cover: Option<String>,
-    
+
     // User-owned, game-level data
     pub rating: u8,
     pub status: GameStatus,
     pub tags: Vec<String>,
     pub note: String,
-    
+
     // Store metadata (same across platforms)
     pub genre: Vec<String>,
     pub dev: String,
@@ -115,7 +115,7 @@ pub struct Game {
     pub steam_match_rev: u32,
     pub links: HashMap<String, String>,
     pub custom: Vec<CustomField>,
-    
+
     // Platform-specific copies
     pub copies: Vec<GameCopy>,
 }
