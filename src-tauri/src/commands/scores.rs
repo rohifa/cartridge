@@ -983,6 +983,7 @@ mod tests {
                     installed: false,
                     playtime: None,
                     last: None,
+                    last_played_at: None,
                 })
                 .collect(),
         }

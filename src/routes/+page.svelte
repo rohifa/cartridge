@@ -36,7 +36,7 @@
     getLibraryPath,
     revealLibrary as apiRevealLibrary,
   } from '$lib/api.js';
-  import { allTags, matchFilters, primaryCopy, totalPlaytime } from '$lib/utils.js';
+  import { allTags, gameLastPlayed, lastPlayedTs, matchFilters, primaryCopy, totalPlaytime } from '$lib/utils.js';
   import { PLAT, LISTDOT } from '$lib/constants.js';
   import type {
     Game, GameList, GamePatch, SidebarFilter, AppView,
@@ -173,7 +173,7 @@
       const playtime = (x: Game) => totalPlaytime(x);
       g = g.filter(x => playtime(x) == null || playtime(x) === 0);
     } else if (f.type === 'recent') {
-      g = g.filter(x => x.copies.some(c => c.last != null));
+      g = g.filter(x => x.copies.some(c => lastPlayedTs(c) != null));
     } else if (f.type === 'list') {
       const L = lists.find(l => l.id === f.value);
       if (L) {
@@ -199,9 +199,10 @@
       playtime:   (a, b) => (totalPlaytime(b) ?? 0) - (totalPlaytime(a) ?? 0),
       rating:     (a, b) => b.rating - a.rating,
       recent:     (a, b) => {
-        const aLast = primaryCopy(a)?.last;
-        const bLast = primaryCopy(b)?.last;
-        return (aLast ? 0 : 1) - (bLast ? 0 : 1);
+        // Most recent first, never played last, ties by title.
+        const at = gameLastPlayed(a) ?? -Infinity;
+        const bt = gameLastPlayed(b) ?? -Infinity;
+        return at === bt ? a.title.localeCompare(b.title) : bt - at;
       },
       metacritic: (a, b) => (b.metacritic ?? 0) - (a.metacritic ?? 0),
       userScore:  (a, b) => (b.userScore ?? 0) - (a.userScore ?? 0),

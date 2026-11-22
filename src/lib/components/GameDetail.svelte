@@ -9,7 +9,7 @@
   import PlatIcon from './PlatIcon.svelte';
   import { tick } from 'svelte';
   import { PLAT, STATUS_META, SCORE_SOURCES, LISTDOT } from '$lib/constants.js';
-  import { fmtHours, fmtReviews, matchFilters, normTag, primaryCopy, totalPlaytime, TAG_MAX } from '$lib/utils.js';
+  import { fmtHours, fmtLastPlayed, fmtReviews, matchFilters, normTag, primaryCopy, totalPlaytime, TAG_MAX } from '$lib/utils.js';
   import type { Game, GameList, SteamMatchAction } from '$lib/types.js';
 
   let {
@@ -293,6 +293,7 @@
               </div>
               <div class="copies-list">
                 {#each game.copies as copy}
+                  {@const lastPlayed = fmtLastPlayed(copy)}
                   <div class="copy-row">
                     <PlatIcon platform={copy.platform} size={18} />
                     <div class="copy-info">
@@ -301,8 +302,8 @@
                         {#if copy.playtime != null}
                           <span>{fmtHours(copy.playtime)}</span>
                         {/if}
-                        {#if copy.last}
-                          <span>· {copy.last}</span>
+                        {#if lastPlayed}
+                          <span>· {lastPlayed}</span>
                         {/if}
                         {#if copy.installed}
                           <span>· Installed</span>

@@ -74,12 +74,19 @@ fn has_user_data(g: &Game) -> bool {
 /// fill in wherever `primary` has none.
 fn absorb_game(primary: &mut Game, other: Game) {
     for c in other.copies {
-        if !primary
+        match primary
             .copies
-            .iter()
-            .any(|p| p.platform == c.platform && p.app_id == c.app_id)
+            .iter_mut()
+            .find(|p| p.platform == c.platform && p.app_id == c.app_id)
         {
-            primary.copies.push(c);
+            // Same store copy on both entries: keep the most recent session.
+            Some(p) => {
+                if c.last_played_at > p.last_played_at {
+                    p.last_played_at = c.last_played_at;
+                    p.last = c.last;
+                }
+            }
+            None => primary.copies.push(c),
         }
     }
     if primary.rating == 0 {
@@ -428,7 +435,9 @@ async fn sync_steam(
         for sg in &steam_games {
             let app_id_str = sg.appid.to_string();
             let playtime = sg.playtime_forever.map(|m| m as f64 / 60.0);
-            let last = sg.rtime_last_played.filter(|&t| t > 0).map(relative_time);
+            let last_played_at = sg.rtime_last_played.filter(|&t| t > 0);
+            let last = last_played_at.map(relative_time);
+            let last_played_at = last_played_at.map(|t| t as i64);
             let installed = playtime.map(|h| h > 0.0).unwrap_or(false);
 
             // First pass: look for existing game with this Steam app_id in any copy
@@ -447,6 +456,7 @@ async fn sync_steam(
                 {
                     copy.playtime = playtime;
                     copy.last = last.clone();
+                    copy.last_played_at = last_played_at;
                     copy.installed = installed;
                 }
                 updated += 1;
@@ -468,6 +478,7 @@ async fn sync_steam(
                         installed,
                         playtime,
                         last: last.clone(),
+                        last_played_at,
                     });
                     updated += 1;
                 } else {
@@ -502,6 +513,7 @@ async fn sync_steam(
                             installed,
                             playtime,
                             last: last.clone(),
+                            last_played_at,
                         }],
                     });
                     added += 1;
@@ -1090,6 +1102,7 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
                         installed: false,
                         playtime: None,
                         last: None,
+                        last_played_at: None,
                     });
                     if game.year == 0 && year > 0 {
                         game.year = year;
@@ -1129,6 +1142,7 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
                             installed: false,
                             playtime: None,
                             last: None,
+                            last_played_at: None,
                         }],
                     });
                     added += 1;
@@ -1691,6 +1705,7 @@ async fn sync_gog(state: Db<'_>, account_id: String) -> Result<SyncResult, Strin
                         installed: false,
                         playtime: None,
                         last: None,
+                        last_played_at: None,
                     });
                     // Update game-level metadata if missing
                     if game.year == 0 && year > 0 {
@@ -1729,6 +1744,7 @@ async fn sync_gog(state: Db<'_>, account_id: String) -> Result<SyncResult, Strin
                             installed: false,
                             playtime: None,
                             last: None,
+                            last_played_at: None,
                         }],
                     });
                     added += 1;
@@ -1840,6 +1856,7 @@ mod tests {
                 installed: false,
                 playtime: None,
                 last: None,
+                last_played_at: None,
             }],
         }
     }
@@ -1901,6 +1918,55 @@ mod tests {
         assert_eq!(d.lists[0].game_ids.as_deref(), Some(&[2u64][..]));
         // Idempotent.
         assert_eq!(merge_duplicate_games(&mut d), 0);
+    }
+
+    #[test]
+    fn merge_keeps_last_played_at() {
+        let mut steam = game(1, "Hades", Platform::Steam, "1145360");
+        steam.copies[0].last_played_at = Some(1_700_000_000);
+        let mut gog = game(2, "Hades", Platform::Gog, "2073486541");
+        gog.rating = 5;
+        let mut d = data(vec![steam, gog], vec![]);
+
+        assert_eq!(merge_duplicate_games(&mut d), 1);
+        let hades = &d.games[0];
+        assert_eq!(hades.id, 2);
+        let steam_copy = hades
+            .copies
+            .iter()
+            .find(|c| c.platform == Platform::Steam)
+            .unwrap();
+        assert_eq!(steam_copy.last_played_at, Some(1_700_000_000));
+    }
+
+    #[test]
+    fn merge_takes_newer_session_for_the_same_copy() {
+        let mut a = game(1, "Hades", Platform::Steam, "1145360");
+        a.rating = 3;
+        a.copies[0].last_played_at = Some(100);
+        let mut b = game(2, "Hades", Platform::Steam, "1145360");
+        b.copies[0].last_played_at = Some(200);
+        b.copies[0].last = Some("today".into());
+        let mut d = data(vec![a, b], vec![]);
+
+        assert_eq!(merge_duplicate_games(&mut d), 1);
+        let copies = &d.games[0].copies;
+        assert_eq!(copies.len(), 1);
+        assert_eq!(copies[0].last_played_at, Some(200));
+        assert_eq!(copies[0].last.as_deref(), Some("today"));
+    }
+
+    #[test]
+    fn copy_without_last_played_at_deserializes() {
+        let c: GameCopy = serde_json::from_value(serde_json::json!({
+            "platform": "steam", "appId": "620", "installed": true,
+            "playtime": 12.5, "last": "3 days ago",
+        }))
+        .unwrap();
+        assert_eq!(c.last_played_at, None);
+        assert_eq!(c.last.as_deref(), Some("3 days ago"));
+        let v = serde_json::to_value(&c).unwrap();
+        assert!(v.get("lastPlayedAt").is_some());
     }
 
     #[test]
