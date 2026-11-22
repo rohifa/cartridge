@@ -83,6 +83,57 @@ async fn download_cover(
     Ok(())
 }
 
+/// Download `url` to `dest`. Returns Ok(false) when the image doesn't exist
+/// (4xx), so callers can fall through to the next candidate.
+async fn try_download(
+    client: &reqwest::Client,
+    url: &str,
+    dest: &std::path::Path,
+) -> anyhow::Result<bool> {
+    let resp = client.get(url).send().await?;
+    if resp.status().is_client_error() {
+        return Ok(false);
+    }
+    let bytes = resp.error_for_status()?.bytes().await?;
+    std::fs::write(dest, &bytes)?;
+    Ok(true)
+}
+
+/// Some Steam app IDs (multiplayer components, old sub-apps) redirect to a
+/// parent app in the store, e.g. 2130 → 2100. Returns the parent if different.
+async fn steam_parent_appid(client: &reqwest::Client, appid: u64) -> Option<u64> {
+    let url = format!("https://store.steampowered.com/api/appdetails?appids={appid}&filters=basic");
+    let v: serde_json::Value = client.get(&url).send().await.ok()?.json().await.ok()?;
+    let parent = v.get(appid.to_string())?.get("data")?.get("steam_appid")?.as_u64()?;
+    (parent != appid).then_some(parent)
+}
+
+/// Fetch the best available Steam cover for `appid`, in order:
+/// portrait 2x → portrait 1x → parent app's portraits → landscape header.
+/// Returns Ok(false) if none exist.
+async fn download_steam_cover(
+    client: &reqwest::Client,
+    appid: u64,
+    dest: &std::path::Path,
+) -> anyhow::Result<bool> {
+    const CDN: &str = "https://cdn.akamai.steamstatic.com/steam/apps";
+    const PORTRAITS: [&str; 2] = ["library_600x900_2x.jpg", "library_600x900.jpg"];
+
+    for file in PORTRAITS {
+        if try_download(client, &format!("{CDN}/{appid}/{file}"), dest).await? {
+            return Ok(true);
+        }
+    }
+    if let Some(parent) = steam_parent_appid(client, appid).await {
+        for file in PORTRAITS {
+            if try_download(client, &format!("{CDN}/{parent}/{file}"), dest).await? {
+                return Ok(true);
+            }
+        }
+    }
+    try_download(client, &format!("{CDN}/{appid}/header.jpg"), dest).await
+}
+
 // ----- Commands -----
 
 #[tauri::command]
@@ -292,12 +343,9 @@ async fn sync_steam(
         if cover_path.exists() {
             continue;
         }
-        let img_url = format!(
-            "https://cdn.akamai.steamstatic.com/steam/apps/{}/library_600x900_2x.jpg",
-            sg.appid
-        );
-        match download_cover(&client, &img_url, &cover_path).await {
-            Ok(()) => {
+        match download_steam_cover(&client, sg.appid, &cover_path).await {
+            Ok(false) => {} // no art on Steam for this app — leave "No cover art"
+            Ok(true) => {
                 let app_id_str = sg.appid.to_string();
                 let cover_str = cover_path.to_string_lossy().into_owned();
                 let mut store = state.lock().unwrap();
