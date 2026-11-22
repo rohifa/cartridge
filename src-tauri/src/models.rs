@@ -110,6 +110,9 @@ pub struct Game {
     /// with "Not this game" (match None). Automatic matching leaves it alone.
     #[serde(default)]
     pub steam_match_manual: bool,
+    /// Matcher revision of the last automatic search (see `scores::MATCHER_REV`).
+    #[serde(default)]
+    pub steam_match_rev: u32,
     pub links: HashMap<String, String>,
     pub custom: Vec<CustomField>,
     

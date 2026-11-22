@@ -100,18 +100,25 @@ where
 
 const SEARCH_URL: &str = "https://api.steampowered.com/IStoreQueryService/SearchSuggestions/v1/";
 const SEARCH_DELAY: Duration = Duration::from_millis(1000);
+/// Bump when the matching rules improve: unmatched (non-manual) games searched
+/// with an older revision are searched again on the next run.
+pub(crate) const MATCHER_REV: u32 = 2;
 
 /// Trailing edition labels that differ between stores for the same game
 /// ("…: Game of the Year Edition" on GOG, "… Game of the Year" on Steam).
-/// Longer phrases first where one ends with another.
+/// Longer phrases first where one ends with another. Any other
+/// "<separator> X Edition" is handled by `strip_generic_edition`.
 const EDITION_SUFFIXES: &[&str] = &[
     "game of the year edition", "game of the year", "goty edition", "goty",
     "definitive edition", "enhanced edition", "complete edition", "ultimate edition",
     "digital deluxe edition", "deluxe edition", "gold edition", "premium edition",
     "special edition", "anniversary edition", "standard edition", "collector's edition",
-    "hd edition", "remastered", "remaster", "director's cut", "director\u{2019}s cut",
-    "the final cut", "final cut", "complete", "hd",
+    "hd edition", "complete collection", "complete pack", "remastered", "remaster",
+    "director's cut", "director\u{2019}s cut", "the final cut", "final cut",
+    "complete", "classic", "hd",
 ];
+
+const SEPARATORS: [&str; 4] = [": ", " - ", " – ", " — "];
 
 /// Roman numerals II–IX as whole words → digits ("III" == "3").
 /// I and X are left alone ("I Am Bread", "Mega Man X").
@@ -123,35 +130,82 @@ fn numeral(word: &str) -> Option<&'static str> {
     })
 }
 
-/// Lowercase alphanumerics only, `&` = "and", roman numerals as digits.
-fn normalize(s: &str) -> String {
+fn words(s: &str) -> Vec<String> {
     s.replace('&', " and ")
         .to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| !w.is_empty())
-        .map(|w| numeral(w).unwrap_or(w))
+        .map(|w| numeral(w).unwrap_or(w).to_string())
         .collect()
 }
 
-/// Title without ™/® and without trailing edition labels; used as search term.
+/// Lowercase alphanumerics only, `&` = "and", roman numerals as digits.
+fn normalize(s: &str) -> String {
+    words(s).concat()
+}
+
+/// Comparison key without edition labels; a trailing "1" is dropped too
+/// ("Gothic" == "Gothic 1").
+fn base_key(s: &str) -> String {
+    let mut w = words(&strip_edition(s));
+    if w.len() > 1 && w.last().is_some_and(|x| x == "1") { w.pop(); }
+    w.concat()
+}
+
+fn trim_seps(s: &str) -> &str {
+    s.trim_end_matches(|c: char| c.is_whitespace() || "-:–—,(".contains(c))
+}
+
+/// No ™/®/©, no alternate-language name after " / " ("Lost Castle / 失落城堡").
+fn clean_name(s: &str) -> String {
+    let s: String = s.chars().filter(|c| !matches!(c, '™' | '®' | '©')).collect();
+    let s = s.split(" / ").next().unwrap_or(&s);
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn strip_known_suffix(s: &str) -> Option<String> {
+    EDITION_SUFFIXES.iter().find_map(|suf| {
+        let start = s.len().checked_sub(suf.len())?;
+        let ok = s.is_char_boundary(start)
+            && s[start..].eq_ignore_ascii_case(suf)
+            && s[..start].ends_with(|c: char| !c.is_alphanumeric());
+        if !ok { return None; }
+        let mut rest = trim_seps(&s[..start]);
+        // "Nioh: The Complete Edition" → "Nioh"
+        if rest.len() > 4 && rest[rest.len() - 4..].eq_ignore_ascii_case(" the") {
+            rest = trim_seps(&rest[..rest.len() - 4]);
+        }
+        (!rest.is_empty()).then(|| rest.to_string())
+    })
+}
+
+/// "<title><separator>[The] <1–2 words> Edition" → "<title>"
+/// ("Overcooked: Gourmet Edition", "…: Spacer's Choice Edition").
+fn strip_generic_edition(s: &str) -> Option<String> {
+    let (pos, sep) = SEPARATORS.iter().filter_map(|sep| Some((s.rfind(sep)?, *sep))).max_by_key(|(p, _)| *p)?;
+    let tail: Vec<&str> = s[pos + sep.len()..].split_whitespace().collect();
+    let n = tail.len() - usize::from(tail.first().is_some_and(|w| w.eq_ignore_ascii_case("the")));
+    let is_edition = tail.last().is_some_and(|w| w.eq_ignore_ascii_case("edition"));
+    let head = trim_seps(&s[..pos]);
+    // Longer tails are subtitles ("Ghostbusters: Spirits Unleashed Ecto Edition").
+    (is_edition && (2..=3).contains(&n) && !head.is_empty()).then(|| head.to_string())
+}
+
+/// Title cleaned and without trailing edition labels or parentheticals
+/// ("(2016)", "(Original)", "(GOTY)"); used as the search term.
 pub(crate) fn strip_edition(title: &str) -> String {
-    let mut s: String = title.chars().filter(|c| !matches!(c, '™' | '®' | '©')).collect();
-    s = s.trim().to_string();
+    let mut s = clean_name(title);
     loop {
-        let t = s.trim_end_matches(|c: char| c == ')' || c.is_whitespace());
-        let cut = EDITION_SUFFIXES.iter().find_map(|suf| {
-            let start = t.len().checked_sub(suf.len())?;
-            let ok = t.is_char_boundary(start)
-                && t[start..].eq_ignore_ascii_case(suf)
-                && t[..start].ends_with(|c: char| !c.is_alphanumeric());
-            ok.then_some(start)
-        });
-        let Some(start) = cut else { break };
-        let rest = t[..start]
-            .trim_end_matches(|c: char| c.is_whitespace() || "-:–—,(".contains(c))
-            .to_string();
-        if rest.is_empty() { break; }
-        s = rest;
+        if s.ends_with(')') {
+            if let Some(i) = s.rfind('(') {
+                let rest = trim_seps(&s[..i]);
+                if !rest.is_empty() { s = rest.to_string(); continue; }
+            }
+        }
+        match strip_known_suffix(&s).or_else(|| strip_generic_edition(&s)) {
+            Some(rest) => s = rest,
+            None => break,
+        }
     }
     s
 }
@@ -161,22 +215,66 @@ pub(crate) struct Candidate {
     pub appid: u64,
     pub name: String,
     pub reviews: u32,
+    /// Earliest of Steam's release / original release year.
+    pub year: Option<u32>,
 }
 
-/// Pick the Steam app for `title` among search results: an exact (normalized)
-/// title match wins; otherwise the same title once edition labels are dropped
-/// on both sides. Anything looser is rejected — no score beats a wrong one.
-/// Ties go to the app with most reviews, i.e. the main listing
-/// (HoMM3 HD Edition, 20k reviews, over a 2026 re-release with 268).
-pub(crate) fn pick_match(title: &str, candidates: &[Candidate]) -> Option<SteamMatch> {
-    let full = normalize(title);
-    let base = normalize(&strip_edition(title));
-    let best = |pred: &dyn Fn(&Candidate) -> bool| {
+/// Pick the Steam app for a game among search results (games only — DLC,
+/// demos and soundtracks are filtered out by `search_steam`). In order:
+///
+///   1. exact title (normalized)
+///   2. same title once edition labels are dropped on both sides, unless the
+///      app came out more than 3 years after the game: that's a remaster, not
+///      this version ("Ticket To Ride: Classic Edition" 2019 ≠ the 2024 app;
+///      Death Stranding → Director's Cut, +3, still matches). Only checked for
+///      games from 2010 on, or whose title says "original"/"classic": older
+///      classics are on Steam with the date they were *added* (Gothic 2001 →
+///      Steam 2008), which can't be told apart from a remaster by year.
+///   3. Steam's name is the title plus a subtitle ("TOEM: A Photo Adventure"),
+///      only if exactly one search result has that shape — several mean the
+///      title is a series ("HITMAN: Codename 47 / Absolution / Blood Money") —
+///      and it came out between 10 years before and 1 year after the game
+///      ("Fallout" 1997 ≠ "Fallout: New Vegas" 2010)
+///
+/// The game's year is its GOG/Epic release, often later than the original
+/// (Watch Dogs: 2020), hence the lopsided windows. Unknown years skip the
+/// check in 2 and fail it in 3. Ties go to the most reviews, i.e. the main
+/// listing. Anything looser is rejected — no score beats a wrong one.
+pub(crate) fn pick_match(title: &str, year: u32, candidates: &[Candidate]) -> Option<SteamMatch> {
+    let full = normalize(&clean_name(title));
+    let base = base_key(title);
+    let most_reviews = |pred: &dyn Fn(&Candidate) -> bool| {
         candidates.iter().filter(|c| pred(c)).max_by_key(|c| c.reviews)
     };
-    best(&|c| normalize(&c.name) == full)
-        .or_else(|| best(&|c| normalize(&strip_edition(&c.name)) == base))
+    let has_subtitle = |c: &Candidate| {
+        let name = clean_name(&c.name);
+        SEPARATORS.iter().any(|sep| {
+            name.match_indices(sep).any(|(pos, _)| base_key(&name[..pos]) == base)
+        })
+    };
+    let lower = title.to_lowercase();
+    let check_remaster = year >= 2010 || lower.contains("original") || lower.contains("classic");
+    let not_remaster = |c: &Candidate| {
+        !check_remaster || year == 0 || c.year.is_none_or(|y| y <= year + 3)
+    };
+    let close_year = |c: &Candidate| year > 0 && c.year.is_some_and(|y| y + 10 >= year && y <= year + 1);
+
+    most_reviews(&|c| normalize(&clean_name(&c.name)) == full)
+        .or_else(|| most_reviews(&|c| base_key(&c.name) == base && not_remaster(c)))
+        .or_else(|| {
+            let mut subtitled = candidates.iter().filter(|c| has_subtitle(c));
+            match (subtitled.next(), subtitled.next()) {
+                (Some(c), None) if close_year(c) => Some(c),
+                _ => None,
+            }
+        })
         .map(|c| SteamMatch { appid: c.appid, name: c.name.clone() })
+}
+
+fn unix_year(v: &serde_json::Value) -> Option<u32> {
+    let ts = v.as_i64().or_else(|| v.as_str()?.parse().ok()).filter(|&t| t > 0)?;
+    use chrono::Datelike;
+    Some(chrono::DateTime::from_timestamp(ts, 0)?.year() as u32)
 }
 
 async fn search_steam(client: &reqwest::Client, term: &str) -> Result<Vec<Candidate>, FetchError> {
@@ -184,37 +282,48 @@ async fn search_steam(client: &reqwest::Client, term: &str) -> Result<Vec<Candid
         "search_term": term,
         "max_results": 10,
         "context": { "language": "english", "country_code": "US" },
-        "data_request": { "include_reviews": true },
+        "data_request": { "include_reviews": true, "include_release": true },
     });
     let v = get_json(client.get(SEARCH_URL).query(&[("input_json", input.to_string())])).await?;
     let items = v["response"]["store_items"].as_array().cloned().unwrap_or_default();
     Ok(items
         .iter()
-        .filter(|i| i["success"].as_i64() == Some(1))
+        // type 0 = game (1 demo, 4 DLC, 11 soundtrack)
+        .filter(|i| i["success"].as_i64() == Some(1) && i["type"].as_i64().unwrap_or(0) == 0)
         .filter_map(|i| Some(Candidate {
             appid: i["id"].as_u64()?,
             name: i["name"].as_str()?.to_string(),
             reviews: i["reviews"]["summary_filtered"]["review_count"].as_u64().unwrap_or(0) as u32,
+            year: [&i["release"]["steam_release_date"], &i["release"]["original_release_date"]]
+                .into_iter()
+                .filter_map(unix_year)
+                .min(),
         }))
         .collect())
+}
+
+fn match_due(g: &Game, now: i64) -> bool {
+    !has_steam_copy(g)
+        && !g.steam_match_manual
+        && g.steam_match.is_none()
+        && (g.steam_match_rev < MATCHER_REV || due(g.steam_match_checked_at, now))
 }
 
 /// Match GOG/Epic-only games to Steam apps. Returns how many got a match.
 async fn match_titles(app: &AppHandle, client: &reqwest::Client, now: i64) -> anyhow::Result<u32> {
     let state = app.state::<Mutex<AppStore>>();
-    let todo: Vec<(u64, String)> = {
+    let todo: Vec<(u64, String, u32)> = {
         let store = state.lock().unwrap();
         store.data.games.iter()
-            .filter(|g| !has_steam_copy(g) && !g.steam_match_manual && g.steam_match.is_none()
-                && due(g.steam_match_checked_at, now))
-            .map(|g| (g.id, g.title.clone()))
+            .filter(|g| match_due(g, now))
+            .map(|g| (g.id, g.title.clone(), g.year))
             .collect()
     };
     if todo.is_empty() { return Ok(0); }
     eprintln!("[Scores] matching {} titles on Steam", todo.len());
 
     let (mut matched, mut unsaved) = (0u32, 0u32);
-    for (id, title) in todo {
+    for (id, title, year) in todo {
         let term = strip_edition(&title);
         let candidates = match paced(SEARCH_DELAY, || search_steam(client, &term)).await {
             Ok(c) => c,
@@ -224,12 +333,13 @@ async fn match_titles(app: &AppHandle, client: &reqwest::Client, now: i64) -> an
             }
             Err(FetchError::Other(e)) => { eprintln!("[Scores] search {title:?}: {e:#}"); continue; }
         };
-        let found = pick_match(&title, &candidates);
+        let found = pick_match(&title, year, &candidates);
 
         let mut store = state.lock().unwrap();
         // The entry may have been merged away by a sync meanwhile; next run redoes it.
         let Some(game) = store.data.games.iter_mut().find(|g| g.id == id) else { continue };
         game.steam_match_checked_at = Some(now);
+        game.steam_match_rev = MATCHER_REV;
         if let Some(m) = found {
             eprintln!("[Scores] {title:?} → {} ({})", m.name, m.appid);
             game.steam_match = Some(m);
@@ -698,7 +808,7 @@ mod tests {
             tags: vec![], note: String::new(), genre: vec![], dev: String::new(), year: 0,
             metacritic: None, metacritic_checked_at: None,
             opencritic: None, user_score: None, user_score_reviews: None,
-            steam_match: None, steam_match_checked_at: None, steam_match_manual: false,
+            steam_match: None, steam_match_checked_at: None, steam_match_manual: false, steam_match_rev: 0,
             links: Default::default(), custom: vec![],
             copies: copies.iter().map(|(p, id)| GameCopy {
                 platform: p.clone(), app_id: (*id).into(), account_id: None,
@@ -712,7 +822,11 @@ mod tests {
     }
 
     fn cands(list: &[(u64, &str)]) -> Vec<Candidate> {
-        list.iter().map(|&(appid, n)| Candidate { appid, name: n.into(), reviews: 0 }).collect()
+        list.iter().map(|&(appid, n)| Candidate { appid, name: n.into(), reviews: 0, year: None }).collect()
+    }
+
+    fn cand(appid: u64, name: &str, reviews: u32, year: u32) -> Candidate {
+        Candidate { appid, name: name.into(), reviews, year: Some(year) }
     }
 
     // ── matching ──
@@ -733,33 +847,118 @@ mod tests {
     #[test]
     fn exact_title_wins_over_edition_match() {
         let c = cands(&[(632470, "Disco Elysium - The Final Cut"), (1233220, "Disco Elysium - The Final Cut Soundtrack")]);
-        assert_eq!(pick_match("Disco Elysium - The Final Cut", &c).unwrap().appid, 632470);
+        assert_eq!(pick_match("Disco Elysium - The Final Cut", 2021, &c).unwrap().appid, 632470);
         let c = cands(&[(1850570, "DEATH STRANDING DIRECTOR'S CUT"), (1190460, "DEATH STRANDING")]);
-        assert_eq!(pick_match("Death Stranding", &c).unwrap().appid, 1190460);
+        assert_eq!(pick_match("Death Stranding", 2019, &c).unwrap().appid, 1190460);
     }
 
     #[test]
     fn matches_across_edition_labels_and_numerals() {
         let c = cands(&[(391220, "Rise of the Tomb Raider™"), (203160, "Tomb Raider Game of the Year")]);
-        assert_eq!(pick_match("Tomb Raider", &c).unwrap().appid, 203160);
+        assert_eq!(pick_match("Tomb Raider", 2013, &c).unwrap().appid, 203160);
         let c = cands(&[(3809850, "Heroes of Might and Magic III Remake"), (297000, "Heroes® of Might & Magic® III - HD Edition")]);
-        assert_eq!(pick_match("Heroes of Might and Magic 3: Complete", &c).unwrap().appid, 297000);
+        assert_eq!(pick_match("Heroes of Might and Magic 3: Complete", 1999, &c).unwrap().appid, 297000);
         // Same match level → most reviews wins.
         let mut c = cands(&[(4921760, "Heroes Of Might And Magic III"), (297000, "Heroes® of Might & Magic® III - HD Edition")]);
         c[0].reviews = 268;
         c[1].reviews = 20_305;
-        assert_eq!(pick_match("Heroes of Might and Magic 3: Complete", &c).unwrap().appid, 297000);
+        assert_eq!(pick_match("Heroes of Might and Magic 3: Complete", 1999, &c).unwrap().appid, 297000);
         let c = cands(&[(870780, "CONTROL Ultimate Edition")]);
-        assert_eq!(pick_match("Control", &c).unwrap().name, "CONTROL Ultimate Edition");
+        assert_eq!(pick_match("Control", 2019, &c).unwrap().name, "CONTROL Ultimate Edition");
     }
 
     #[test]
     fn rejects_sequels_and_extras() {
         let c = cands(&[(1145350, "Hades II"), (755800, "Hades' Star"), (1206340, "Hades Original Soundtrack")]);
-        assert_eq!(pick_match("Hades", &c), None);
+        assert_eq!(pick_match("Hades", 2020, &c), None);
         let c = cands(&[(228280, "Baldur's Gate: Enhanced Edition")]);
-        assert_eq!(pick_match("Baldur's Gate II: Enhanced Edition", &c), None);
-        assert_eq!(pick_match("Fall Guys", &[]), None);
+        assert_eq!(pick_match("Baldur's Gate II: Enhanced Edition", 2013, &c), None);
+        assert_eq!(pick_match("Fall Guys", 2020, &[]), None);
+    }
+
+    #[test]
+    fn strips_parentheticals_alt_names_and_generic_editions() {
+        assert_eq!(strip_edition("DOOM (2016)"), "DOOM");
+        assert_eq!(strip_edition("Sam & Max Save the World (2007 Original Version)"), "Sam & Max Save the World");
+        assert_eq!(strip_edition("Lost Castle / 失落城堡"), "Lost Castle");
+        assert_eq!(strip_edition("Nioh: The Complete Edition"), "Nioh");
+        assert_eq!(strip_edition("Bear With Me: The Complete Collection"), "Bear With Me");
+        assert_eq!(strip_edition("Overcooked: Gourmet Edition"), "Overcooked");
+        assert_eq!(strip_edition("The Outer Worlds: Spacer's Choice Edition"), "The Outer Worlds");
+        assert_eq!(strip_edition("STAR WARS™ Battlefront™ II: Celebration Edition"), "STAR WARS Battlefront II");
+        assert_eq!(strip_edition("XCOM: Enemy Unknown Complete Pack"), "XCOM: Enemy Unknown");
+        assert_eq!(strip_edition("Fallout Classic"), "Fallout");
+        // A subtitle that merely ends in "Edition"-less words stays.
+        assert_eq!(strip_edition("Shadowrun: Hong Kong"), "Shadowrun: Hong Kong");
+        assert_eq!(strip_edition("Halo: The Master Chief Collection"), "Halo: The Master Chief Collection");
+        assert_eq!(strip_edition("Ghostbusters: Spirits Unleashed Ecto Edition"), "Ghostbusters: Spirits Unleashed Ecto Edition");
+    }
+
+    #[test]
+    fn matches_steam_subtitles_and_cleaned_names() {
+        let c = vec![cand(2900640, "TOEM 2", 900, 2026), cand(1307580, "TOEM: A Photo Adventure", 20_000, 2021)];
+        assert_eq!(pick_match("TOEM", 2021, &c).unwrap().appid, 1307580);
+        let c = vec![cand(211600, "Thief Gold (1999)", 4_000, 1998)]; // Steam's original_release_date
+        assert_eq!(pick_match("Thief™ Gold", 1998, &c).unwrap().appid, 211600);
+        let c = vec![cand(2445690, "Lost Castle 2", 5_000, 2024), cand(434650, "Lost Castle / 失落城堡", 30_000, 2016)];
+        assert_eq!(pick_match("Lost Castle", 2016, &c).unwrap().appid, 434650);
+        let c = vec![cand(1297900, "Gothic 1 Remake", 9_000, 2025), cand(65540, "Gothic 1", 6_000, 2008)];
+        assert_eq!(pick_match("Gothic", 2001, &c).unwrap().appid, 65540);
+        // Steam released earlier than the store year: fine (Epic 2023, Steam 2017).
+        let c = vec![cand(469600, "Legion TD 2 - Multiplayer Tower Defense", 20_000, 2017)];
+        assert_eq!(pick_match("Legion TD 2", 2023, &c).unwrap().appid, 469600);
+        // Several subtitled apps (episodes, a series): ambiguous, no match.
+        let c = vec![cand(437160, "The Lion's Song: Episode 1 - Silence", 9_000, 2016),
+                     cand(477030, "The Lion's Song: Episode 4 - Closure", 900, 2017)];
+        assert_eq!(pick_match("The Lion's Song", 2017, &c), None);
+    }
+
+    #[test]
+    fn subtitle_match_rejects_later_apps_and_unknown_years() {
+        let c = vec![cand(22380, "Fallout: New Vegas", 213_476, 2010)];
+        assert_eq!(pick_match("Fallout Classic", 1997, &c), None);
+        let c = vec![cand(1307580, "TOEM: A Photo Adventure", 20_000, 2021)];
+        assert_eq!(pick_match("TOEM", 0, &c), None);
+        let c = vec![Candidate { appid: 1, name: "TOEM: A Photo Adventure".into(), reviews: 1, year: None }];
+        assert_eq!(pick_match("TOEM", 2021, &c), None);
+        // Sequels with a subtitle aren't subtitles of the original.
+        let c = vec![cand(1449110, "The Outer Worlds 2: Something", 50_000, 2025)];
+        assert_eq!(pick_match("The Outer Worlds", 2019, &c), None);
+        // Much older franchise entry with a subtitle isn't this game either.
+        let c = vec![cand(6900, "Hitman: Codename 47", 5_000, 2000)];
+        assert_eq!(pick_match("HITMAN", 2019, &c), None);
+        let c = vec![cand(203140, "Hitman: Absolution", 40_000, 2012), cand(6900, "Hitman: Codename 47", 5_000, 2000)];
+        assert_eq!(pick_match("HITMAN", 2019, &c), None);
+    }
+
+    #[test]
+    fn edition_match_rejects_much_later_remasters() {
+        let c = vec![cand(1440440, "Sam & Max Save the World", 3_000, 2020)];
+        assert_eq!(pick_match("Sam & Max Save the World (2007 Original Version)", 2007, &c), None);
+        let c = vec![cand(2477010, "Ticket to Ride®", 2_000, 2024)];
+        assert_eq!(pick_match("Ticket To Ride: Classic Edition", 2019, &c), None);
+        // Up to 3 years later is the same game in a fuller edition.
+        let c = vec![cand(1850570, "DEATH STRANDING DIRECTOR'S CUT", 30_000, 2022)];
+        assert_eq!(pick_match("Death Stranding", 2019, &c).unwrap().appid, 1850570);
+        // Unknown game year: no check.
+        let c = vec![cand(1440440, "Sam & Max Save the World", 3_000, 2020)];
+        assert!(pick_match("Sam & Max Save the World (Original)", 0, &c).is_some());
+        // Pre-2010 classic added to Steam later: year says nothing, no check.
+        let c = vec![cand(65540, "Gothic 1", 6_000, 2008)];
+        assert!(pick_match("Gothic", 2001, &c).is_some());
+    }
+
+    #[test]
+    fn rematches_unmatched_games_after_matcher_upgrade() {
+        let mut g = game(&[(Platform::Gog, "1")]);
+        g.steam_match_checked_at = Some(1_000);
+        g.steam_match_rev = MATCHER_REV - 1;
+        assert!(match_due(&g, 1_001));
+        g.steam_match_rev = MATCHER_REV;
+        assert!(!match_due(&g, 1_001));
+        g.steam_match_rev = 0;
+        g.steam_match_manual = true; // "Not this game" stays rejected
+        assert!(!match_due(&g, 1_001));
     }
 
     #[test]
@@ -904,16 +1103,25 @@ mod tests {
     #[ignore]
     async fn live_matching() {
         let client = reqwest::Client::new();
-        for (title, expected) in [
-            ("The Witcher 3: Wild Hunt - Game of the Year Edition", Some(292030)),
-            ("Disco Elysium - The Final Cut", Some(632470)),
-            ("Heroes of Might and Magic 3: Complete", Some(297000)),
-            ("Hades", Some(1145360)),
-            ("Fall Guys", None),
+        for (title, year, expected) in [
+            ("The Witcher 3: Wild Hunt - Game of the Year Edition", 2016, Some(292030)),
+            ("Disco Elysium - The Final Cut", 2021, Some(632470)),
+            // Pre-2010: no remaster check, so the HD Edition (2015) is accepted.
+            ("Heroes of Might and Magic 3: Complete", 1999, Some(297000)),
+            ("HITMAN", 2019, None),
+            ("Hades", 2020, Some(1145360)),
+            ("Fall Guys", 2020, None),
+            // v2 rules
+            ("TOEM", 2021, Some(1307580)),
+            ("The Falconeer", 2020, Some(1135260)),
+            ("Thief™ Gold", 1998, Some(211600)),
+            ("Lost Castle", 2016, Some(434650)),
+            ("Legion TD 2", 2023, Some(469600)),
+            ("Fallout Classic", 1997, None), // must not become Fallout: New Vegas
         ] {
             tokio::time::sleep(Duration::from_millis(500)).await;
             let Ok(c) = search_steam(&client, &strip_edition(title)).await else { panic!("search failed") };
-            let got = pick_match(title, &c);
+            let got = pick_match(title, year, &c);
             println!("{title:?} → {got:?}");
             assert_eq!(got.map(|m| m.appid), expected, "{title}");
         }

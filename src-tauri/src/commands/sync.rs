@@ -100,6 +100,7 @@ fn absorb_game(primary: &mut Game, other: Game) {
         primary.steam_match = other.steam_match;
         primary.steam_match_checked_at = other.steam_match_checked_at;
         primary.steam_match_manual = other.steam_match_manual;
+        primary.steam_match_rev = other.steam_match_rev;
     }
     if primary.metacritic.is_none() {
         primary.metacritic = other.metacritic;
@@ -429,7 +430,7 @@ async fn sync_steam(
                         year: 0,
                         metacritic: None,
                         opencritic: None,
-                        user_score: None, user_score_reviews: None, metacritic_checked_at: None, steam_match: None, steam_match_checked_at: None, steam_match_manual: false,
+                        user_score: None, user_score_reviews: None, metacritic_checked_at: None, steam_match: None, steam_match_checked_at: None, steam_match_manual: false, steam_match_rev: 0,
                         links: Default::default(),
                         custom: vec![],
                         copies: vec![GameCopy {
@@ -963,7 +964,7 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
                         year,
                         metacritic: None,
                         opencritic: None,
-                        user_score: None, user_score_reviews: None, metacritic_checked_at: None, steam_match: None, steam_match_checked_at: None, steam_match_manual: false,
+                        user_score: None, user_score_reviews: None, metacritic_checked_at: None, steam_match: None, steam_match_checked_at: None, steam_match_manual: false, steam_match_rev: 0,
                         links: Default::default(),
                         custom: vec![],
                         copies: vec![GameCopy {
@@ -1490,7 +1491,7 @@ async fn sync_gog(state: Db<'_>, account_id: String) -> Result<SyncResult, Strin
                         year,
                         metacritic: None,
                         opencritic: None,
-                        user_score: None, user_score_reviews: None, metacritic_checked_at: None, steam_match: None, steam_match_checked_at: None, steam_match_manual: false,
+                        user_score: None, user_score_reviews: None, metacritic_checked_at: None, steam_match: None, steam_match_checked_at: None, steam_match_manual: false, steam_match_rev: 0,
                         links: Default::default(),
                         custom: vec![],
                         copies: vec![GameCopy {
@@ -1572,7 +1573,7 @@ mod tests {
         Game {
             id, title: title.into(), cover: None, rating: 0, status: GameStatus::Backlog,
             tags: vec![], note: String::new(), genre: vec![], dev: String::new(), year: 0,
-            metacritic: None, opencritic: None, user_score: None, user_score_reviews: None, metacritic_checked_at: None, steam_match: None, steam_match_checked_at: None, steam_match_manual: false,
+            metacritic: None, opencritic: None, user_score: None, user_score_reviews: None, metacritic_checked_at: None, steam_match: None, steam_match_checked_at: None, steam_match_manual: false, steam_match_rev: 0,
             links: Default::default(), custom: vec![],
             copies: vec![GameCopy {
                 platform, app_id: app_id.into(), account_id: None,
