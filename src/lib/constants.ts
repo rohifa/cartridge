@@ -42,9 +42,8 @@ export const STATUS_META: Record<GameStatus, { label: string; color: string; bg:
 };
 
 export const SCORE_SOURCES = [
-  { key: 'metacritic' as const, label: 'Metacritic', abbr: 'MC'  },
-  { key: 'opencritic' as const, label: 'OpenCritic', abbr: 'OC'  },
-  { key: 'userScore'  as const, label: 'User score', abbr: 'USR' },
+  { key: 'metacritic' as const, label: 'Metacritic',    abbr: 'MC',    unit: ''  },
+  { key: 'userScore'  as const, label: 'Steam reviews', abbr: 'Steam', unit: '%' },
 ];
 
 export const ALLTAGS = ['backlog', 'finished', 'favourite', 'replay', 'co-op', 'short'];

@@ -26,14 +26,25 @@ export interface Game {
   dev: string;
   year: number;
   metacritic: number | null;
+  metacriticCheckedAt?: number | null; // unix secs of last check via Steam
   opencritic: number | null;
-  userScore: number | null;
+  userScore: number | null;          // Steam reviews, % positive
+  userScoreReviews?: number | null;  // review count behind userScore; null = never fetched
+  steamMatch?: { appid: number; name: string } | null; // Steam app matched by title (no Steam copy)
+  steamMatchCheckedAt?: number | null; // unix secs of the last automatic search
+  steamMatchManual?: boolean;          // user set (by link) or rejected the match
   links: Partial<Record<'metacritic' | 'opencritic' | 'hltb' | 'store', string>>;
   custom: Array<{ k: string; v: string }>;
   
   // Platform-specific copies
   copies: GameCopy[];
 }
+
+/// User actions on a GOG/Epic game's Steam match (see GameDetail).
+export type SteamMatchAction =
+  | { kind: 'set'; input: string } // pasted Steam link or app ID
+  | { kind: 'reject' }             // "Not this game"
+  | { kind: 'auto' };              // forget the manual choice, search again
 
 export type GamePatch = Partial<Omit<Game, 'id' | 'copies'>>;
 

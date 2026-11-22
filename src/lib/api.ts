@@ -28,6 +28,15 @@ export const startOAuthFlow   = (platform: string)               => invoke<Accou
 export const syncAccount      = (accountId: string)              => invoke<SyncResult>('sync_account', { accountId });
 export const removeAccount    = (accountId: string)              => invoke<void>('remove_account', { accountId });
 
+// ── Scores ────────────────────────────────────────────────────────────────────
+
+/// Starts the paced background score refresh (title matching, Steam reviews,
+/// Metacritic); results arrive as `games-updated` events.
+export const startScoreRefresh = () => invoke<void>('start_score_refresh');
+export const setSteamMatch     = (gameId: number, input: string) => invoke<Game>('set_steam_match', { gameId, input });
+export const rejectSteamMatch  = (gameId: number)                => invoke<Game>('reject_steam_match', { gameId });
+export const autoSteamMatch    = (gameId: number)                => invoke<Game>('auto_steam_match', { gameId });
+
 // ── Filesystem ────────────────────────────────────────────────────────────────
 
 export const getLibraryPath = ()                => invoke<string>('get_library_path');

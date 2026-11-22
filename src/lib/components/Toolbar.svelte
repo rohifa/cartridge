@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
 
-  type SortKey = 'title' | 'playtime' | 'recent' | 'rating' | 'metacritic' | 'opencritic' | 'userScore' | 'year';
+  type SortKey = 'title' | 'playtime' | 'recent' | 'rating' | 'metacritic' | 'userScore' | 'year';
   type ViewMode = 'grid' | 'list';
   type Theme = 'dark' | 'light';
 
@@ -45,8 +45,7 @@
     ['recent',      'Recently played'],
     ['rating',      'Your rating'],
     ['metacritic',  'Metacritic'],
-    ['opencritic',  'OpenCritic'],
-    ['userScore',   'User score'],
+    ['userScore',   'Steam reviews'],
     ['year',        'Release date'],
   ];
 

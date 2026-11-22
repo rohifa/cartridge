@@ -6,6 +6,14 @@ export function fmtHours(h: number | null): string {
   return h.toFixed(1).replace(/\.0$/, '') + ' h';
 }
 
+/// Caption under the Steam score: review count, or why there is no percentage.
+export function fmtReviews(count: number | null | undefined, score: number | null): string | null {
+  if (count == null) return null;
+  if (count === 0)   return 'No reviews';
+  if (score == null) return 'Not enough reviews';
+  return `${count.toLocaleString('en-US')} reviews`;
+}
+
 export function scoreTone(v: number | null): { fg: string; bg: string; bd: string } {
   if (v == null) return { fg: 'var(--fg-3)', bg: 'var(--bg-3)', bd: 'var(--border-1)' };
   if (v >= 75)   return { fg: 'oklch(0.96 0.02 150)', bg: 'oklch(0.55 0.15 150)', bd: 'transparent' };
@@ -21,6 +29,19 @@ export function coverSrc(game: Game): string | null {
   return `/covers/${game.cover}.png`;
 }
 
+/// Days since last played, from the relative label the backend stores
+/// ("today", "yesterday", "3 days ago", "2 weeks ago", "5 months ago", "1 years ago").
+/// Unknown / never played → Infinity.
+function lastPlayedDays(last: string | null | undefined): number {
+  if (!last) return Infinity;
+  if (last === 'today') return 0;
+  if (last === 'yesterday') return 1;
+  const m = last.match(/^(\d+)\s+(day|week|month|year)s?\s+ago$/);
+  if (!m) return Infinity;
+  const n = Number(m[1]);
+  return n * ({ day: 1, week: 7, month: 30, year: 365 } as const)[m[2] as 'day' | 'week' | 'month' | 'year'];
+}
+
 /// Get primary copy for display (installed > most recent > first)
 export function primaryCopy(game: Game): GameCopy | null {
   if (game.copies.length === 0) return null;
@@ -28,8 +49,8 @@ export function primaryCopy(game: Game): GameCopy | null {
     // Prefer installed
     if (c.installed && !best.installed) return c;
     if (!c.installed && best.installed) return best;
-    // Then prefer most recent
-    if (c.last && (!best.last || c.last > best.last)) return c;
+    // Then prefer most recently played
+    if (lastPlayedDays(c.last) < lastPlayedDays(best.last)) return c;
     return best;
   });
 }
@@ -48,7 +69,6 @@ export function matchFilters(g: Game, f: Partial<Filters> | null | undefined): b
   if (f.yearLo != null    && g.year > 0 && g.year < f.yearLo)                       return false;
   if (f.yearHi != null    && g.year > 0 && g.year > f.yearHi)                       return false;
   if (f.mcMin  && (g.metacritic == null  || g.metacritic  < f.mcMin))               return false;
-  if (f.ocMin  && (g.opencritic == null  || g.opencritic  < f.ocMin))               return false;
   if (f.usrMin && (g.userScore  == null  || g.userScore   < f.usrMin))              return false;
   const playtime = totalPlaytime(g);
   if (f.playtimeMax != null && !(playtime != null && playtime <= f.playtimeMax))    return false;

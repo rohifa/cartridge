@@ -32,6 +32,10 @@ pub fn run() {
             commands::sync::start_oauth_flow,
             commands::sync::sync_account,
             commands::sync::remove_account,
+            commands::scores::start_score_refresh,
+            commands::scores::set_steam_match,
+            commands::scores::reject_steam_match,
+            commands::scores::auto_steam_match,
             commands::fs::get_library_path,
             commands::fs::reveal_in_finder,
         ])

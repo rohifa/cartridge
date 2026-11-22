@@ -13,6 +13,5 @@
 
 <span style="display:inline-flex; gap:5px">
   <ScoreBadge value={game.metacritic} {size} />
-  <ScoreBadge value={game.opencritic} {size} />
-  <ScoreBadge value={game.userScore}  {size} />
+  <ScoreBadge value={game.userScore}  {size} unit="%" />
 </span>
