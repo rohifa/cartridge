@@ -78,6 +78,7 @@ cartridge/
 │       └── fs.rs               # get_library_path, reveal_in_finder
 ├── static/
 │   ├── covers/                 # bundled cover art (*.png)
+│   ├── fonts/                  # Geist + Geist Mono, variable woff2 (SIL OFL); @font-face in global.css
 │   ├── design-tokens.css
 │   └── global.css
 ├── design system/              # design documentation
@@ -177,7 +178,7 @@ Cartridge has a comprehensive design system located in `design system/`. Key pri
 
 ### Design Tokens
 All tokens are defined in `design system/colors_and_type.css`:
-- **Typography**: Geist (UI) + Geist Mono (data/metadata)
+- **Typography**: Geist (UI) + Geist Mono (data/metadata), bundled in `static/fonts/` — don't load fonts from a CDN
 - **Spacing**: 4px base grid (`--space-1` through `--space-12`)
 - **Colors**: Dark mode primary, warm paper light mode
 - **Accent**: Gold (`--gold-500`) for selection, focus, ratings

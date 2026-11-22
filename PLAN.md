@@ -5,7 +5,7 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 ---
 
 ## Section 1 — Foundation ✅
-- [x] Update `src/app.html` — fonts (Geist + Geist Mono via Google Fonts), `data-theme="dark"` on `<html>`, links to `design-tokens.css` + `global.css`
+- [x] Update `src/app.html` — fonts (Geist + Geist Mono via Google Fonts; later bundled in `static/fonts/`), `data-theme="dark"` on `<html>`, links to `design-tokens.css` + `global.css`
 - [x] `static/design-tokens.css` — all CSS custom properties, dark + light themes
 - [x] `static/global.css` — body reset, scrollbars, range slider, spin animation
 - [x] `src/lib/types.ts` — TypeScript interfaces: `Game`, `Account`, `GameList`, `Filters`, `Prefs`, `AppView`, `SidebarFilter`, `CartridgeData`
