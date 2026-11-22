@@ -32,8 +32,8 @@
     rejectSteamMatch,
     autoSteamMatch,
   } from '$lib/api.js';
-  import { matchFilters, primaryCopy, totalPlaytime } from '$lib/utils.js';
-  import { PLAT, ALLTAGS, LISTDOT } from '$lib/constants.js';
+  import { allTags, matchFilters, primaryCopy, totalPlaytime } from '$lib/utils.js';
+  import { PLAT, LISTDOT } from '$lib/constants.js';
   import type {
     Game, GameList, GamePatch, SidebarFilter, AppView,
     Filters, Prefs, ListColor, ListKind, Account, CartridgeData, Platform, SteamMatchAction,
@@ -216,6 +216,7 @@
   });
 
   const selected = $derived(games.find(g => g.id === selectedId) ?? null);
+  const knownTags = $derived(allTags(games));
 
   // An empty manual list gets its own empty state instead of "Nothing matches":
   // no filter or query can be the reason nothing shows.
@@ -238,11 +239,6 @@
       action.kind === 'reject' ? await rejectSteamMatch(id) :
                                  await autoSteamMatch(id);
     games = games.map(g => g.id === id ? updated : g);
-  }
-
-  async function addTag(g: Game) {
-    const next = ALLTAGS.find(t => !g.tags.includes(t));
-    if (next) await patch(g.id, { tags: [...g.tags, next] });
   }
 
   function launch(g: Game) {
@@ -462,7 +458,7 @@
         onBack={() => { selectedId = null; }}
         onPatch={patch}
         onSteamMatch={steamMatch}
-        onAddTag={addTag}
+        {knownTags}
         onLaunch={launch}
         onToggleList={toggleInList}
         onCreateList={openCreateList}

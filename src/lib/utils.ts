@@ -1,5 +1,6 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import type { Game, GameCopy, Filters } from './types.js';
+import { ALLTAGS } from './constants.js';
 
 export function fmtHours(h: number | null): string {
   if (h == null) return '— h';
@@ -73,4 +74,20 @@ export function matchFilters(g: Game, f: Partial<Filters> | null | undefined): b
   const playtime = totalPlaytime(g);
   if (f.playtimeMax != null && !(playtime != null && playtime <= f.playtimeMax))    return false;
   return true;
+}
+
+export const TAG_MAX = 32;
+
+/// A typed tag as it is stored: trimmed, lowercase, single spaces, at most 32 chars.
+export function normTag(raw: string): string {
+  return raw.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, TAG_MAX).trim();
+}
+
+/// Every tag in the library plus the built-in ones, most used first, then A–Z.
+export function allTags(games: Game[]): string[] {
+  const counts = new Map<string, number>(ALLTAGS.map(t => [t, 0]));
+  for (const g of games) for (const t of g.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
+  return [...counts]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([t]) => t);
 }
