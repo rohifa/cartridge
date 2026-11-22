@@ -21,6 +21,19 @@ export function coverSrc(game: Game): string | null {
   return `/covers/${game.cover}.png`;
 }
 
+/// Days since last played, from the relative label the backend stores
+/// ("today", "yesterday", "3 days ago", "2 weeks ago", "5 months ago", "1 years ago").
+/// Unknown / never played → Infinity.
+function lastPlayedDays(last: string | null | undefined): number {
+  if (!last) return Infinity;
+  if (last === 'today') return 0;
+  if (last === 'yesterday') return 1;
+  const m = last.match(/^(\d+)\s+(day|week|month|year)s?\s+ago$/);
+  if (!m) return Infinity;
+  const n = Number(m[1]);
+  return n * ({ day: 1, week: 7, month: 30, year: 365 } as const)[m[2] as 'day' | 'week' | 'month' | 'year'];
+}
+
 /// Get primary copy for display (installed > most recent > first)
 export function primaryCopy(game: Game): GameCopy | null {
   if (game.copies.length === 0) return null;
@@ -28,8 +41,8 @@ export function primaryCopy(game: Game): GameCopy | null {
     // Prefer installed
     if (c.installed && !best.installed) return c;
     if (!c.installed && best.installed) return best;
-    // Then prefer most recent
-    if (c.last && (!best.last || c.last > best.last)) return c;
+    // Then prefer most recently played
+    if (lastPlayedDays(c.last) < lastPlayedDays(best.last)) return c;
     return best;
   });
 }

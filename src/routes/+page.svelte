@@ -213,6 +213,7 @@
       const d = await loadData();
       games    = d.games;
       accounts = d.accounts;
+      lists    = d.lists; // sync may merge duplicates and remap list memberships
     } catch (e) {
       console.error('syncAll failed:', e);
     } finally {
@@ -245,6 +246,7 @@
       const d = await loadData();
       games    = d.games;
       accounts = d.accounts;
+      lists    = d.lists; // sync may merge duplicates and remap list memberships
       if (result.errors.length > 0) {
         showSyncNotif(false, result.errors[0]);
       } else if (result.added === 0 && result.updated === 0) {

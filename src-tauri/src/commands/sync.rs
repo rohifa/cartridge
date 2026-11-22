@@ -3,6 +3,9 @@ use tauri::State;
 
 use egs_api::EpicGames;
 use egs_api::api::types::account::UserData as EgsUserData;
+use egs_api::api::types::asset_info::AssetInfo as EgsAssetInfo;
+use egs_api::api::types::epic_asset::EpicAsset as EgsAsset;
+use egs_api::api::types::library::Record as EgsRecord;
 
 use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
 
@@ -46,16 +49,120 @@ struct OwnedGame {
 // ----- Helpers -----
 
 /// Normalize title for fuzzy matching across platforms
+///
+/// Keeps only letters and digits (Unicode-aware), so punctuation, ™/®,
+/// typographic quotes (’) and spacing differences don't matter; `&` == `and`.
+/// Editions ("GOTY", "Director's Cut") are deliberately NOT stripped — that
+/// would also merge distinct games like "Tomb Raider" / "Tomb Raider: Anniversary".
 fn normalize_title(s: &str) -> String {
-    s.to_lowercase()
-        .replace("™", "")
-        .replace("®", "")
-        .replace(":", "")
-        .replace("'", "")
-        .replace("-", "")
-        .replace(" ", "")
-        .trim()
-        .to_string()
+    s.replace('&', " and ")
+        .chars()
+        .flat_map(char::to_lowercase)
+        .filter(|c| c.is_alphanumeric())
+        .collect()
+}
+
+fn has_user_data(g: &Game) -> bool {
+    g.rating > 0
+        || !g.tags.is_empty()
+        || !g.note.is_empty()
+        || !g.custom.is_empty()
+        || !matches!(g.status, GameStatus::Backlog)
+}
+
+/// Fold `other` into `primary`: copies are combined, user data and metadata
+/// fill in wherever `primary` has none.
+fn absorb_game(primary: &mut Game, other: Game) {
+    for c in other.copies {
+        if !primary.copies.iter().any(|p| p.platform == c.platform && p.app_id == c.app_id) {
+            primary.copies.push(c);
+        }
+    }
+    if primary.rating == 0 { primary.rating = other.rating; }
+    if matches!(primary.status, GameStatus::Backlog) { primary.status = other.status; }
+    for t in other.tags {
+        if !primary.tags.contains(&t) { primary.tags.push(t); }
+    }
+    if !other.note.is_empty() && other.note != primary.note {
+        if primary.note.is_empty() {
+            primary.note = other.note;
+        } else {
+            primary.note.push_str("\n\n");
+            primary.note.push_str(&other.note);
+        }
+    }
+    primary.custom.extend(other.custom);
+    if primary.cover.is_none()      { primary.cover = other.cover; }
+    if primary.genre.is_empty()     { primary.genre = other.genre; }
+    if primary.dev.is_empty()       { primary.dev = other.dev; }
+    if primary.year == 0            { primary.year = other.year; }
+    if primary.metacritic.is_none() { primary.metacritic = other.metacritic; }
+    if primary.opencritic.is_none() { primary.opencritic = other.opencritic; }
+    if primary.user_score.is_none() { primary.user_score = other.user_score; }
+    for (k, v) in other.links {
+        primary.links.entry(k).or_insert(v);
+    }
+}
+
+/// Merge library entries that are the same game owned on several platforms
+/// (same normalized title) into one entry with multiple copies.
+///
+/// Title matching at insert time only catches games that are new to the store;
+/// entries that were created separately (older builds, Epic placeholders that got
+/// their real title later) would otherwise stay duplicated forever.  Runs after
+/// every sync.  The surviving entry is the one with user data, then a cover, then
+/// the oldest id; list memberships are remapped to it.  Returns entries removed.
+fn merge_duplicate_games(data: &mut crate::models::CartridgeData) -> u32 {
+    use std::collections::{HashMap, HashSet};
+
+    // Epic records without catalog data are titled with their internal app_name
+    // (e.g. "Marigold") — never match on those.
+    let is_placeholder = |g: &Game| {
+        g.copies.iter().any(|c| c.platform == Platform::Epic && c.app_id == g.title)
+    };
+
+    let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, g) in data.games.iter().enumerate() {
+        if is_placeholder(g) { continue; }
+        let key = normalize_title(&g.title);
+        if !key.is_empty() {
+            groups.entry(key).or_default().push(i);
+        }
+    }
+
+    let mut to_remove: Vec<usize> = Vec::new();
+    let mut remap: HashMap<u64, u64> = HashMap::new();
+
+    for idxs in groups.into_values().filter(|v| v.len() > 1) {
+        let primary = *idxs.iter().max_by_key(|&&i| {
+            let g = &data.games[i];
+            (has_user_data(g), g.cover.is_some(), std::cmp::Reverse(g.id))
+        }).unwrap();
+
+        for &i in idxs.iter().filter(|&&i| i != primary) {
+            let other = data.games[i].clone();
+            remap.insert(other.id, data.games[primary].id);
+            absorb_game(&mut data.games[primary], other);
+            to_remove.push(i);
+        }
+    }
+
+    to_remove.sort_unstable();
+    for &i in to_remove.iter().rev() {
+        data.games.remove(i);
+    }
+
+    for list in &mut data.lists {
+        if let Some(ids) = &mut list.game_ids {
+            for id in ids.iter_mut() {
+                if let Some(&new_id) = remap.get(id) { *id = new_id; }
+            }
+            let mut seen = HashSet::new();
+            ids.retain(|id| seen.insert(*id));
+        }
+    }
+
+    to_remove.len() as u32
 }
 
 fn relative_time(unix: u64) -> String {
@@ -329,6 +436,8 @@ async fn sync_steam(
             acc.status = AccountStatus::Ok;
             acc.count = steam_games.len() as u32;
         }
+        let merged = merge_duplicate_games(&mut store.data);
+        if merged > 0 { eprintln!("[Steam] merged {merged} cross-platform duplicates"); }
         store.save().map_err(|e| e.to_string())?;
 
         store.covers_dir.clone()
@@ -349,11 +458,12 @@ async fn sync_steam(
                 let app_id_str = sg.appid.to_string();
                 let cover_str = cover_path.to_string_lossy().into_owned();
                 let mut store = state.lock().unwrap();
-                // Find game with this Steam app_id in any copy
+                // Find game with this Steam app_id in any copy; keep a cover it
+                // already has from another platform.
                 if let Some(game) = store.data.games.iter_mut().find(|g| {
                     g.copies.iter().any(|c| c.platform == Platform::Steam && c.app_id == app_id_str)
                 }) {
-                    game.cover = Some(cover_str);
+                    if game.cover.is_none() { game.cover = Some(cover_str); }
                 }
                 store.save().ok();
             }
@@ -379,7 +489,7 @@ pub fn remove_account(state: Db<'_>, account_id: String) -> Result<(), String> {
 //   logout (+ federated logout across Epic domains)
 //     → login page  →  (user signs in)  →  store.epicgames.com
 //                                                    ↓
-//        /id/api/redirect?clientId=LAUNCHER&responseType=code&_=ts
+//        /id/api/redirect?clientId=LAUNCHER&responseType=code
 //                                                    ↓  (JSON body)
 //        {"redirectUrl":"com.epicgames.launcher://apps?code=CODE"}
 //                                                    ↓
@@ -403,14 +513,15 @@ const EPIC_AUTH_SCRIPT: &str = r#"
         if (href.indexOf('login.epic')  !== -1) return;
 
         // Once on the store the user is authenticated.  Request an exchange code
-        // scoped to the launcher client.  The timestamp prevents the server
-        // returning a cached/already-consumed code from the same session.
+        // scoped to the launcher client.  Do NOT add extra query params (e.g. a
+        // cache-busting `_=ts`): Epic validates the query strictly and rejects
+        // unknown keys with "errors.com.epicgames.accountportal.validation.unknown".
+        // Each request mints a fresh code anyway, and the webview is incognito.
         if (href.indexOf('store.epicgames.com') !== -1) {
             window.location.replace(
                 'https://www.epicgames.com/id/api/redirect' +
                 '?clientId=34a02cf8f4414e29b15921876da36f9a' +
-                '&responseType=code' +
-                '&_=' + Date.now()
+                '&responseType=code'
             );
             return;
         }
@@ -552,9 +663,11 @@ async fn epic_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, Strin
     eprintln!("[Epic] auth code received (len={}) — exchanging for tokens via egs-api", code.len());
     eprintln!("[Epic] code snippet: {}…", &code[..code.len().min(12)]);
 
-    // Exchange code for session using egs-api (grant_type=exchange_code)
+    // /id/api/redirect?responseType=code returns an *authorization* code, not an
+    // exchange code — pass it as the 2nd arg (grant_type=authorization_code).
+    // Passing it as exchange_token makes Epic reply "Id must not be null".
     let mut egs = EpicGames::new();
-    egs.try_auth_code(Some(code), None).await
+    egs.try_auth_code(None, Some(code)).await
         .map_err(|e| format!("Epic authentication failed: {e}"))?;
 
     let user_data = egs.user_details();
@@ -605,6 +718,88 @@ async fn epic_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, Strin
 
 // ── Epic library sync ───────────────────────────────────────────────────────
 
+/// Fetch catalog metadata for every library record, keyed by catalog_item_id.
+///
+/// Uses the per-namespace GET endpoint (`try_asset_info`).  egs-api's
+/// `bulk_catalog_items` POST is rejected by Epic with 415 unsupported_media_type.
+/// Failures are logged and skipped; the game still imports without metadata.
+async fn fetch_epic_catalog(
+    egs: &EpicGames,
+    records: &[&EgsRecord],
+) -> std::collections::HashMap<String, EgsAssetInfo> {
+    use std::sync::Arc;
+    const CONCURRENCY: usize = 8;
+
+    let sem = Arc::new(tokio::sync::Semaphore::new(CONCURRENCY));
+    let mut tasks = tokio::task::JoinSet::new();
+
+    for r in records {
+        let asset = EgsAsset {
+            app_name:        r.app_name.clone(),
+            catalog_item_id: r.catalog_item_id.clone(),
+            namespace:       r.namespace.clone(),
+            ..Default::default()
+        };
+        let mut egs = egs.clone();
+        let sem = Arc::clone(&sem);
+        tasks.spawn(async move {
+            let _permit = sem.acquire_owned().await;
+            let res = egs.try_asset_info(&asset).await;
+            (asset, res)
+        });
+    }
+
+    let mut out = std::collections::HashMap::new();
+    let mut failures = 0usize;
+    while let Some(joined) = tasks.join_next().await {
+        let Ok((asset, res)) = joined else { failures += 1; continue };
+        match res {
+            Ok(Some(info)) => { out.insert(asset.catalog_item_id, info); }
+            Ok(None) => {}
+            Err(e) => {
+                failures += 1;
+                if failures <= 5 {
+                    eprintln!("[Epic] catalog {} ({}) FAILED: {e:?}", asset.app_name, asset.namespace);
+                }
+            }
+        }
+    }
+    if failures > 0 {
+        eprintln!("[Epic] catalog lookups failed for {failures} items");
+    }
+    out
+}
+
+/// Remove an Epic copy imported as a placeholder game for a non-game record
+/// (DLC, hidden content).  The game itself is dropped only when the copy was its
+/// last one and it carries no user data.  Returns 1 if a game was removed.
+fn remove_epic_placeholder(data: &mut crate::models::CartridgeData, app_name: &str) -> u32 {
+    let Some(idx) = data.games.iter().position(|g| {
+        g.copies.iter().any(|c| c.platform == Platform::Epic && c.app_id == app_name)
+    }) else { return 0 };
+
+    let game = &mut data.games[idx];
+    // Only touch entries that never got real metadata (title is still the app_name).
+    if game.title != app_name { return 0; }
+    game.copies.retain(|c| !(c.platform == Platform::Epic && c.app_id == app_name));
+
+    let untouched = game.copies.is_empty()
+        && game.rating == 0
+        && game.tags.is_empty()
+        && game.note.is_empty()
+        && game.custom.is_empty()
+        && matches!(game.status, GameStatus::Backlog);
+    let id = game.id;
+    let in_list = data.lists.iter().any(|l| l.game_ids.as_ref().is_some_and(|ids| ids.contains(&id)));
+
+    if untouched && !in_list {
+        data.games.remove(idx);
+        1
+    } else {
+        0
+    }
+}
+
 async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, String> {
     eprintln!("[Epic] sync starting for account {account_id}");
 
@@ -623,37 +818,47 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
         .filter(|r| !r.namespace.is_empty() && r.namespace != "ue")
         .collect();
 
-    // Bulk catalog lookup for title, developer, year, cover images
-    let pairs: Vec<(&str, &str)> = game_records.iter()
-        .map(|r| (r.namespace.as_str(), r.catalog_item_id.as_str()))
-        .collect();
-
-    eprintln!("[Epic] fetching catalog metadata for {} items", pairs.len());
-    // Returns HashMap<namespace, HashMap<catalog_item_id, AssetInfo>>
-    let catalog = egs.bulk_catalog_items(&pairs).await.unwrap_or_default();
-    eprintln!("[Epic] catalog fetch complete — {} namespaces", catalog.len());
+    // Catalog lookup for title, developer, year, cover images, categories.
+    // Games that already have a real title and a cover don't need it again —
+    // only new or incomplete records are looked up.
+    let to_lookup: Vec<&EgsRecord> = {
+        let store = state.lock().unwrap();
+        game_records.iter().copied().filter(|r| {
+            !store.data.games.iter().any(|g| {
+                g.cover.is_some()
+                    && g.title != r.app_name
+                    && g.copies.iter().any(|c| c.platform == Platform::Epic && c.app_id == r.app_name)
+            })
+        }).collect()
+    };
+    eprintln!(
+        "[Epic] fetching catalog metadata for {} items ({} already complete)",
+        to_lookup.len(), game_records.len() - to_lookup.len()
+    );
+    let catalog = fetch_epic_catalog(&egs, &to_lookup).await;
+    eprintln!("[Epic] catalog fetch complete — {} of {} items", catalog.len(), to_lookup.len());
 
     // Capture updated session after API calls so refresh token changes are persisted
     let updated_session_json = serde_json::to_string(&egs.user_details()).ok();
 
-    let (mut added, mut updated) = (0u32, 0u32);
+    let (mut added, mut updated, mut removed) = (0u32, 0u32, 0u32);
     let mut cover_queue: Vec<(String, String)> = Vec::new();
 
     let covers_dir = {
         let mut store = state.lock().unwrap();
 
         for record in &game_records {
-            let info = catalog
-                .get(record.namespace.as_str())
-                .and_then(|ns_map| ns_map.get(record.catalog_item_id.as_str()));
+            let info = catalog.get(record.catalog_item_id.as_str());
 
-            // Skip non-game catalog items (DLC, tools, etc.) when category data is available
-            if let Some(i) = info {
-                if let Some(cats) = &i.categories {
-                    if !cats.is_empty() && !cats.iter().any(|c| c.path.starts_with("games")) {
-                        continue;
-                    }
-                }
+            // Skip non-game catalog items (DLC, add-ons, hidden content, tools)
+            // when category data is available.  Earlier syncs without catalog
+            // data imported these as placeholder games — drop those leftovers.
+            let is_non_game = info
+                .and_then(|i| i.categories.as_ref())
+                .is_some_and(|cats| !cats.is_empty() && !cats.iter().any(|c| c.path.starts_with("games")));
+            if is_non_game {
+                removed += remove_epic_placeholder(&mut store.data, &record.app_name);
+                continue;
             }
 
             let title = info
@@ -668,12 +873,20 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0);
 
+            // Covers are 3:4 portrait — prefer tall art, fall back to the wide box.
             let cover_url = info.and_then(|i| {
                 let images = i.key_images.as_ref()?;
-                images.iter()
-                    .find(|img| img.type_field == "DieselGameBox")
-                    .or_else(|| images.iter().find(|img| img.type_field == "OfferImageTall"))
-                    .map(|img| img.url.to_string())
+                ["DieselGameBoxTall", "OfferImageTall", "Thumbnail", "DieselGameBox"]
+                    .iter()
+                    .find_map(|t| images.iter().find(|img| img.type_field == *t))
+                    .map(|img| {
+                        let mut url = img.url.clone();
+                        // Epic's CDN resizes on request; originals can be several MB.
+                        if url.query().is_none() {
+                            url.set_query(Some("w=480&h=640&resize=1"));
+                        }
+                        url.to_string()
+                    })
             });
 
             // First pass: look for existing game with this Epic app_id in any copy
@@ -686,6 +899,10 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
                     c.platform == Platform::Epic && c.app_id == record.app_name
                 }) {
                     copy.account_id = Some(account_id.clone());
+                }
+                // Replace the app_name placeholder from a sync without catalog data.
+                if game.title == record.app_name && title != record.app_name {
+                    game.title = title.clone();
                 }
                 if game.year == 0 && year > 0 { game.year = year; }
                 if game.dev.is_empty() && !dev.is_empty() { game.dev = dev.clone(); }
@@ -745,7 +962,7 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
             }
         }
 
-        eprintln!("[Epic] merge complete — added {added}, updated {updated}");
+        eprintln!("[Epic] merge complete — added {added}, updated {updated}, removed {removed} non-game leftovers");
 
         let now = chrono::Utc::now().format("%b %d, %Y").to_string();
         if let Some(acc) = store.data.accounts.iter_mut().find(|a| a.id == account_id) {
@@ -756,34 +973,42 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
                 acc.egs_session = Some(json);
             }
         }
+        let merged = merge_duplicate_games(&mut store.data);
+        if merged > 0 { eprintln!("[Epic] merged {merged} cross-platform duplicates"); }
         store.save().map_err(|e| e.to_string())?;
         store.covers_dir.clone()
     };
 
     eprintln!("[Epic] downloading covers for {} games", cover_queue.len());
 
+    // Download in parallel; files already on disk (from an earlier, possibly
+    // interrupted sync) are just linked.  The store is saved once at the end
+    // rather than after every cover.
+    const COVER_CONCURRENCY: usize = 8;
     let client = reqwest::Client::new();
-    let mut errors: Vec<String> = Vec::new();
+    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(COVER_CONCURRENCY));
+    let mut tasks = tokio::task::JoinSet::new();
 
-    for (app_name, url) in &cover_queue {
+    for (app_name, url) in cover_queue {
         let cover_path = covers_dir.join(format!("epic_{app_name}.jpg"));
-        if cover_path.exists() {
-            eprintln!("[Epic] cover {app_name} already cached — skip");
-            continue;
-        }
-        eprintln!("[Epic] cover {app_name} ← {url}");
-        match download_cover(&client, url, &cover_path).await {
-            Ok(()) => {
-                eprintln!("[Epic] cover {app_name} saved");
-                let cover_str = cover_path.to_string_lossy().into_owned();
-                let mut store = state.lock().unwrap();
-                if let Some(game) = store.data.games.iter_mut().find(|g| {
-                    g.copies.iter().any(|c| c.platform == Platform::Epic && c.app_id == *app_name)
-                }) {
-                    game.cover = Some(cover_str);
-                }
-                store.save().ok();
+        let client = client.clone();
+        let sem = std::sync::Arc::clone(&sem);
+        tasks.spawn(async move {
+            if cover_path.exists() {
+                return (app_name, cover_path, Ok(()));
             }
+            let _permit = sem.acquire_owned().await;
+            let res = download_cover(&client, &url, &cover_path).await;
+            (app_name, cover_path, res)
+        });
+    }
+
+    let mut errors: Vec<String> = Vec::new();
+    let mut linked: Vec<(String, String)> = Vec::new();
+    while let Some(joined) = tasks.join_next().await {
+        let Ok((app_name, cover_path, res)) = joined else { continue };
+        match res {
+            Ok(()) => linked.push((app_name, cover_path.to_string_lossy().into_owned())),
             Err(e) => {
                 eprintln!("[Epic] cover {app_name} FAILED: {e}");
                 errors.push(format!("cover {app_name}: {e}"));
@@ -791,7 +1016,23 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
         }
     }
 
-    eprintln!("[Epic] sync done — added {added}, updated {updated}, errors {}", errors.len());
+    {
+        let mut store = state.lock().unwrap();
+        for (app_name, cover_str) in &linked {
+            if let Some(game) = store.data.games.iter_mut().find(|g| {
+                g.cover.is_none()
+                    && g.copies.iter().any(|c| c.platform == Platform::Epic && c.app_id == *app_name)
+            }) {
+                game.cover = Some(cover_str.clone());
+            }
+        }
+        store.save().map_err(|e| e.to_string())?;
+    }
+
+    eprintln!(
+        "[Epic] sync done — added {added}, updated {updated}, covers {}, errors {}",
+        linked.len(), errors.len()
+    );
     Ok(SyncResult { added, updated, errors })
 }
 
@@ -1256,6 +1497,8 @@ async fn sync_gog(state: Db<'_>, account_id: String) -> Result<SyncResult, Strin
             acc.status = AccountStatus::Ok;
             acc.count  = all_products.len() as u32;
         }
+        let merged = merge_duplicate_games(&mut store.data);
+        if merged > 0 { eprintln!("[GOG] merged {merged} cross-platform duplicates"); }
         store.save().map_err(|e| e.to_string())?;
         store.covers_dir.clone()
     }; // lock released
@@ -1278,11 +1521,12 @@ async fn sync_gog(state: Db<'_>, account_id: String) -> Result<SyncResult, Strin
                 eprintln!("[GOG] cover {app_id_str} saved");
                 let cover_str = cover_path.to_string_lossy().into_owned();
                 let mut store = state.lock().unwrap();
-                // Find game with this GOG app_id in any copy
+                // Find game with this GOG app_id in any copy; keep a cover it
+                // already has from another platform.
                 if let Some(game) = store.data.games.iter_mut().find(|g| {
                     g.copies.iter().any(|c| c.platform == Platform::Gog && c.app_id == *app_id_str)
                 }) {
-                    game.cover = Some(cover_str);
+                    if game.cover.is_none() { game.cover = Some(cover_str); }
                 }
                 store.save().ok();
             }
@@ -1295,4 +1539,78 @@ async fn sync_gog(state: Db<'_>, account_id: String) -> Result<SyncResult, Strin
 
     eprintln!("[GOG] sync done — added {added}, updated {updated}, errors {}", errors.len());
     Ok(SyncResult { added, updated, errors })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::CartridgeData;
+
+    fn game(id: u64, title: &str, platform: Platform, app_id: &str) -> Game {
+        Game {
+            id, title: title.into(), cover: None, rating: 0, status: GameStatus::Backlog,
+            tags: vec![], note: String::new(), genre: vec![], dev: String::new(), year: 0,
+            metacritic: None, opencritic: None, user_score: None,
+            links: Default::default(), custom: vec![],
+            copies: vec![GameCopy {
+                platform, app_id: app_id.into(), account_id: None,
+                installed: false, playtime: None, last: None,
+            }],
+        }
+    }
+
+    fn data(games: Vec<Game>, list_ids: Vec<u64>) -> CartridgeData {
+        let mut d: CartridgeData = serde_json::from_value(serde_json::json!({
+            "accounts": [], "games": [], "genres": [], "statuses": [],
+            "lists": [{ "id": "l1", "name": "Favs", "color": "green", "kind": "manual",
+                        "icon": "star", "gameIds": list_ids }],
+        })).unwrap();
+        d.games = games;
+        d
+    }
+
+    #[test]
+    fn normalize_ignores_punctuation_symbols_and_case() {
+        assert_eq!(normalize_title("XCOM® 2"), normalize_title("XCOM 2"));
+        assert_eq!(normalize_title("Amnesia:  The Dark Descent"), normalize_title("Amnesia: The Dark Descent"));
+        assert_eq!(normalize_title("Director’s Cut"), normalize_title("Director's Cut"));
+        assert_eq!(normalize_title("Sword & Sworcery"), normalize_title("Sword and Sworcery"));
+        assert_eq!(normalize_title("LIMBO"), normalize_title("Limbo"));
+        // Editions stay distinct on purpose.
+        assert_ne!(normalize_title("Tomb Raider"), normalize_title("Tomb Raider: Anniversary"));
+    }
+
+    #[test]
+    fn merges_same_game_across_platforms() {
+        let mut steam = game(1, "XCOM 2", Platform::Steam, "268500");
+        steam.cover = Some("steam.jpg".into());
+        let mut gog = game(2, "XCOM® 2", Platform::Gog, "1482002159");
+        gog.rating = 4;
+        gog.tags = vec!["strategy".into()];
+        gog.cover = Some("gog.jpg".into());
+        let epic = game(3, "XCOM 2", Platform::Epic, "3be3c4d6");
+        let other = game(4, "Psychonauts", Platform::Steam, "3830");
+        let mut d = data(vec![steam, gog, epic, other], vec![3, 2]);
+
+        assert_eq!(merge_duplicate_games(&mut d), 2);
+        assert_eq!(d.games.len(), 2);
+        // The entry with user data survives and keeps everything.
+        let xcom = d.games.iter().find(|g| g.id == 2).unwrap();
+        assert_eq!(xcom.copies.len(), 3);
+        assert_eq!(xcom.rating, 4);
+        assert_eq!(xcom.cover.as_deref(), Some("gog.jpg"));
+        // List memberships are remapped and deduplicated.
+        assert_eq!(d.lists[0].game_ids.as_deref(), Some(&[2u64][..]));
+        // Idempotent.
+        assert_eq!(merge_duplicate_games(&mut d), 0);
+    }
+
+    #[test]
+    fn never_merges_epic_placeholders() {
+        let real = game(1, "Anemone", Platform::Steam, "111");
+        let placeholder = game(2, "Anemone", Platform::Epic, "Anemone");
+        let mut d = data(vec![real, placeholder], vec![]);
+        assert_eq!(merge_duplicate_games(&mut d), 0);
+        assert_eq!(d.games.len(), 2);
+    }
 }
