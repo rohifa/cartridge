@@ -9,7 +9,7 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 - [x] `static/design-tokens.css` — all CSS custom properties, dark + light themes
 - [x] `static/global.css` — body reset, scrollbars, range slider, spin animation
 - [x] `src/lib/types.ts` — TypeScript interfaces: `Game`, `Account`, `GameList`, `Filters`, `Prefs`, `AppView`, `SidebarFilter`, `CartridgeData`
-- [x] `src/lib/data.ts` — 16 games, 3 accounts, 6 lists, genres array, statuses array
+- [x] `src/lib/data.ts` — 16 games, 3 accounts, 6 lists, genres array, statuses array (removed later; the app starts with an empty library)
 - [x] Cover art `static/covers/*.png` (12 covers)
 - [x] Logo/icon `static/cartridge-icon.png`, `static/cartridge-logo-full.png`
 
@@ -23,7 +23,7 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 - [x] `src/lib/components/Stars.svelte` — 5-star display, optional click-to-set
 - [x] `src/lib/components/Tag.svelte` — colored chip with optional remove button
 - [x] `src/lib/components/ScoreBadge.svelte` — green/yellow/red numeric badge (sm/md/lg)
-- [x] `src/lib/components/ScoreCluster.svelte` — MC + OC + USR badges side by side
+- [x] `src/lib/components/ScoreCluster.svelte` — Metacritic + Steam reviews badges side by side (OpenCritic removed, see Section 14)
 - [x] `src/lib/components/StatusPill.svelte` — colored status pill (backlog/playing/beaten/dropped/wishlist)
 - [x] `src/lib/components/LaunchButton.svelte` — gold "Launch" button or "Not installed" disabled state
 
@@ -54,7 +54,7 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
   - Platform chips (Steam, GOG, Epic)
   - Status chips (backlog/playing/beaten/dropped/wishlist)
   - Year dual-range slider
-  - Metacritic / OpenCritic / User score min-sliders
+  - Metacritic / Steam reviews min-sliders
   - "Clear all" header action
   - "Save as smart list" footer button
 
@@ -73,11 +73,11 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
   - Page header: back button, game title breadcrumb, LaunchButton
   - Hero: sticky cover (232px), large LaunchButton, installed status
   - Right column: platform + dev + status pill, h1 title, genre chips
-  - Score tiles: MC, OC, USR, Hours
+  - Score tiles: Metacritic, Steam reviews (with review count), Hours; Steam match line for GOG/Epic games (Section 14)
   - Store metadata section (OriginLabel "from store · read-only", MetaRow list)
   - Status & rating card (StatusSelect buttons, Stars)
   - Tags card (Tag chips + "+ tag" add button, Notes textarea)
-  - Links card (Metacritic, OpenCritic, HowLongToBeat, Store — each with open button)
+  - Links card (Metacritic, HowLongToBeat, Store — each with open button)
   - Custom fields card (key/value inputs, add/remove)
 
 ---
@@ -173,7 +173,7 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
     - GOG → `goggalaxy://openGame/{app_id}`
     - Epic → `com.epicgames.launcher://apps/{app_id}?action=launch&silent=true`
     - Fallback (no `app_id`) → opens `game.links.store` in the default browser
-  - `open_url(app_handle, url: String)` — generic wrapper used for Metacritic / OpenCritic / HLTB / store links
+  - `open_url(app_handle, url: String)` — generic wrapper used for Metacritic / HLTB / store links
 
 - [x] **`src-tauri/src/commands/sync.rs`**
   - `add_steam_account(state, api_key: String, steam_id: String) -> Account` — validates via `GetPlayerSummaries`; stores `api_key` in the account struct (persisted to disk, never sent to UI); saves
@@ -182,7 +182,7 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
       - Merge strategy: add new games, update `playtime`/`last`/`installed` on existing ones; never overwrite `rating`, `status`, `tags`, `note`, `custom`
       - Cover art: download to `covers_dir/{app_id}.jpg` from `cdn.akamai.steamstatic.com/steam/apps/{id}/library_600x900_2x.jpg` (skip if file already exists)
       - Sets `game.cover` to the absolute path; `coverSrc()` on the frontend will call `convertFileSrc()` for these
-    - **GOG / Epic**: return `SyncResult { errors: ["Not implemented"] }` (stubs; can be filled in later)
+    - **GOG / Epic**: implemented later — OAuth login (`start_oauth_flow`), library + catalog import; same-titled games across platforms are merged into one entry with several copies
     - Updates `account.synced` timestamp and `account.status`; saves; returns `SyncResult`
   - `remove_account(state, account_id: String)` — removes account from `data.accounts`, leaves games in library
 
@@ -238,4 +238,19 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 
 - [x] **`src/routes/+page.svelte`** — on mount, `await loadData()` to populate `games`, `lists`, `accounts`; replace all mutation handlers with `api.ts` calls; keep derived state and filter logic client-side
 - [x] **`src-tauri/tauri.conf.json`** — add `asset` protocol scope for `covers_dir` so `convertFileSrc` URLs resolve correctly in the webview
-- [x] **`src/lib/data.ts`** — keep as a seed reference only; used by `AppStore::load()` on first run to populate an empty library with the 16 demo games; not imported anywhere in production UI code
+- [x] **`src/lib/data.ts`** — kept as a seed reference at first; later removed, and `AppStore::load()` now starts with an empty library
+
+---
+
+## Section 14 — Scores ✅
+
+> Per-game scores from Steam, no API keys. Backend in `src-tauri/src/commands/scores.rs` (PRs #2, #3).
+
+- [x] **Steam user reviews** → `userScore` (% positive) + `userScoreReviews` (count), via `IStoreBrowseService/GetItems`, batched 100 apps per request; no % below 10 reviews
+- [x] **Metascore** → `metacritic` + `links.metacritic`, via store `appdetails` (1 app per request, paced, rechecked every 30 days)
+- [x] **GOG/Epic-only games** matched to a Steam app by title (`steamMatch`): exact → edition labels dropped → Steam subtitle, with series and year checks; `steamMatchRev` re-runs matching for unmatched games when the rules improve
+- [x] **Background job** on app start and after every sync; `games-updated` event updates the UI as results arrive
+- [x] **Game detail**: shows where Steam scores come from; "Not this game", paste a Steam link / app ID, "Match automatically"
+- [x] **UI**: badges with a `%` unit; "User score" renamed "Steam reviews"; OpenCritic removed from all views (fields kept in the model, no source)
+- [ ] Progress indicator for the background job (today only `[Scores]` log lines)
+- [ ] "Refresh scores" action in Settings that rechecks everything immediately
