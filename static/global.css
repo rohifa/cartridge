@@ -2,6 +2,23 @@
    CARTRIDGE — Global resets and base element styles
    ============================================================ */
 
+/* Geist + Geist Mono, bundled (variable woff2 from the `geist` npm package
+   1.7.2, SIL OFL 1.1 — see fonts/OFL.txt). No network request for fonts. */
+@font-face {
+  font-family: "Geist";
+  src: url("fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 *, *::before, *::after { box-sizing: border-box; }
 
 html, body {
