@@ -118,8 +118,13 @@
       prefs    = d.prefs;
       viewMode = d.prefs.defaultView;
       filters  = emptyFilters(); // now yearBounds is correct
-      // Only does work for games never checked or due a recheck.
-      startScoreRefresh().catch(e => console.error('score refresh failed:', e));
+      if (d.prefs.autoSync && d.accounts.length > 0) {
+        // sync_account starts the score job itself, even when the sync fails.
+        syncAll();
+      } else {
+        // Only does work for games never checked or due a recheck.
+        startScoreRefresh().catch(e => console.error('score refresh failed:', e));
+      }
     } catch (e) {
       console.error('loadData failed:', e);
     }
@@ -255,25 +260,50 @@
   }
 
   function launch(g: Game) {
+    if (!prefs.confirmLaunch) { doLaunch(g); return; }
+    confirmReq = {
+      title: `Launch ${g.title}?`,
+      body: `Cartridge will hand off to ${launchPlatform(g)}.`,
+      confirmLabel: 'Launch',
+      onConfirm: () => doLaunch(g),
+    };
+  }
+
+  function launchPlatform(g: Game) {
     const copy = primaryCopy(g);
-    toast = { title: g.title, platform: copy ? PLAT[copy.platform].name : 'Unknown' };
+    return copy ? PLAT[copy.platform].name : 'Unknown';
+  }
+
+  function doLaunch(g: Game) {
+    toast = { title: g.title, platform: launchPlatform(g) };
     apiLaunchGame(g.id).catch(() => { toast = null; });
   }
 
   async function syncAll() {
     if (syncing) return;
     syncing = true;
+    // One failing account doesn't stop the others; the first error is shown.
+    let firstError: string | null = null;
     try {
-      for (const acc of accounts) await apiSyncAccount(acc.id);
+      for (const acc of accounts) {
+        try {
+          const result = await apiSyncAccount(acc.id);
+          if (result.errors.length > 0) firstError ??= `${acc.name}: ${result.errors[0]}`;
+        } catch (e) {
+          firstError ??= `${acc.name}: ${String(e)}`;
+        }
+      }
+      // Also picks up account status changes written by Rust on failure.
       const d = await loadData();
       games    = d.games;
       accounts = d.accounts;
       lists    = d.lists; // sync may merge duplicates and remap list memberships
     } catch (e) {
-      console.error('syncAll failed:', e);
+      firstError ??= String(e);
     } finally {
       syncing = false;
     }
+    if (firstError) showSyncNotif(false, firstError);
   }
 
   function showSyncNotif(ok: boolean, message: string) {
