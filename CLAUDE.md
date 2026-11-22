@@ -39,6 +39,7 @@ cartridge/
 │   │   ├── types.ts            # TypeScript interfaces mirroring Rust models
 │   │   ├── constants.ts        # PLAT, TAGCOLOR, TAGBG, LISTDOT, STATUS_META, SCORE_SOURCES, ALLTAGS
 │   │   ├── utils.ts            # fmtHours(), fmtReviews(), matchFilters(), scoreTone(), coverSrc(), primaryCopy()
+│   │   │                       #   lastPlayedTs(), fmtLastPlayed(), normTag(), allTags()
 │   │   └── components/
 │   │       ├── Sidebar.svelte
 │   │       ├── Toolbar.svelte
@@ -60,22 +61,27 @@ cartridge/
 │   │       ├── LaunchButton.svelte
 │   │       ├── LaunchToast.svelte
 │   │       ├── CreateListModal.svelte
+│   │       ├── ConfirmModal.svelte   # generic confirm dialog (delete list, confirm launch)
+│   │       ├── ContextMenu.svelte    # right-click menu: items, separators, submenus; menuPoint()
 │   │       └── AddAccountModal.svelte
 │   └── app.html
 ├── src-tauri/src/
 │   ├── lib.rs                  # plugin init, AppStore::load, all command registration
 │   ├── main.rs
 │   ├── models.rs               # Rust structs/enums — serde mirrors of types.ts
-│   ├── store.rs                # AppStore: load, atomic save, patch_game, sanitized_data
+│   ├── store.rs                # AppStore: load (parse_library + migrations), atomic save,
+│   │                           #   patch_game, sanitized_data
 │   └── commands/
 │       ├── mod.rs
-│       ├── data.rs             # load_data, patch_game, save_prefs, export_json, export_json_to
+│       ├── data.rs             # load_data, patch_game, save_prefs, export_json,
+│       │                       #   export_json_to (writes to a user-chosen path)
 │       ├── lists.rs            # create_list, delete_list, add_to_list, remove_from_list
-│       ├── launch.rs           # launch_game (platform deep links), open_url
+│       │                       #   (manual lists only; return the updated list)
+│       ├── launch.rs           # launch_game (platform deep links, pick_copy), open_url
 │       ├── sync.rs             # add_steam_account, start_oauth_flow, sync_account, remove_account;
 │       │                       #   cross-platform duplicate merging
 │       ├── scores.rs           # Steam reviews + Metacritic, title matching, background score job
-│       └── fs.rs               # get_library_path (~-abbreviated), reveal_library
+│       └── fs.rs               # get_library_path (~-abbreviated), reveal_library (no path arg)
 ├── static/
 │   ├── covers/                 # bundled cover art (*.png)
 │   ├── fonts/                  # Geist + Geist Mono, variable woff2 (SIL OFL); @font-face in global.css
@@ -94,6 +100,7 @@ cartridge/
 - **Invocation**: Frontend calls commands via `invoke("command_name", { args })`
 - **Registration**: Commands must be registered in `tauri::generate_handler![...]` in `lib.rs`
 - **Events (Rust → frontend)**: background work pushes updates with `app.emit(...)`; `+page.svelte` subscribes with `listen()` from `@tauri-apps/api/event`. Currently one event: `games-updated` (payload `Game[]`, full updated entries, replaced by id)
+- **Boot**: `+page.svelte` calls `load_data`, then either syncs every account (when `prefs.autoSync` is on and accounts exist) or calls `start_score_refresh`. Never both: `sync_account` starts the score job itself, even when the sync fails.
 
 Example:
 ```rust
@@ -113,13 +120,19 @@ import { invoke } from "@tauri-apps/api/core";
 const result = await invoke("greet", { name: "World" });
 ```
 
+### Library file
+
+- **Loading**: `AppStore::load` reads `library.json` through `read_library` → `parse_library` in `store.rs`, which also runs the version migrations (`migrate_v0_to_v1`). A file that can't be read, parsed or migrated is renamed to `library.corrupt-<unix secs>.json` before falling back to empty data, so the next save never overwrites it. Add new migrations in `parse_library`.
+- **Credentials**: `api_key` and OAuth tokens live in the same file. Anything sent to the frontend or exported goes through `sanitized_data()`.
+- **Last played**: `GameCopy.lastPlayedAt` (unix secs) is the source of truth; the relative label is computed at render time (`fmtLastPlayed()` in `utils.ts`). `last` is a legacy label kept so older libraries still sort and display (estimated from the text); don't write new logic against it.
+
 ## Scores
 
 Per-game scores come from Steam, without API keys. Everything lives in `src-tauri/src/commands/scores.rs`; its module doc lists the endpoints.
 
 - **Fields**: `userScore` = Steam reviews, % positive (`userScoreReviews` = review count; no % below 10 reviews). `metacritic` = Metascore via Steam `appdetails`. `opencritic` is kept in the model but has no source and is not shown anywhere.
 - **Which Steam app**: owned Steam copies first. Games owned only on GOG/Epic use `steamMatch`, found by title search (`pick_match`) or set by the user from a pasted Steam link. `steamMatchManual` marks user decisions, including "Not this game". Automatic matching never touches those.
-- **Background job** (`spawn_score_refresh`): runs on app start (`start_score_refresh`) and after every `sync_account`, in three phases: title matching (1 search/s), reviews (batched `GetItems`), Metacritic (1 app per 1.6 s, rechecked every 30 days). It is rate-limit aware, resumable through the `*_checked_at` fields, and emits `games-updated`.
+- **Background job** (`spawn_score_refresh`): runs on app start (`start_score_refresh`, unless auto-sync runs instead) and after every `sync_account`, in three phases: title matching (1 search/s), reviews (batched `GetItems`), Metacritic (1 app per 1.6 s, rechecked every 30 days). It is rate-limit aware, resumable through the `*_checked_at` fields, and emits `games-updated`.
 - **Matching rules**: prefer no score over a wrong one. When you change the rules in `pick_match` / `strip_edition`, bump `MATCHER_REV` so unmatched games are searched again, and add cases to the unit tests. `cargo test -- --ignored live_` runs a few cases against the real Steam API.
 - **Steam search limits**: every Steam search endpoint only indexes games currently for sale. Delisted games can't be found by title, but `GetItems` still returns their reviews by app ID; for those the user pastes a link.
 
@@ -229,7 +242,12 @@ Since this is a desktop app with SSG, all routes are prerendered at build time.
 
 ## Adding Tauri Plugins
 
-The project uses `tauri-plugin-opener` for opening external links. To add more plugins:
+The project uses two plugins:
+
+- `tauri-plugin-opener` for external links, launcher deep links and revealing `library.json` in Finder.
+- `tauri-plugin-dialog` for the save dialog used by Export JSON. Capabilities grant only `dialog:allow-save`. The Rust crate (`~2.7` in `Cargo.toml`) and `@tauri-apps/plugin-dialog` (`~2.7.x` in `package.json`) are pinned together: the Tauri CLI refuses to build when their major.minor versions differ, so upgrade both at once.
+
+To add more plugins:
 
 1. Add to `src-tauri/Cargo.toml`:
    ```toml

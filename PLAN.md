@@ -254,3 +254,34 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 - [x] **UI**: badges with a `%` unit; "User score" renamed "Steam reviews"; OpenCritic removed from all views (fields kept in the model, no source)
 - [ ] Progress indicator for the background job (today only `[Scores]` log lines)
 - [ ] "Refresh scores" action in Settings that rechecks everything immediately
+
+---
+
+## Section 15 — Visible controls ✅
+
+> Every control the UI already showed now does what it says. Branch `feat/visible-controls`.
+
+- [x] **Unreadable library backup** — `store.rs`: `read_library` / `parse_library`; a `library.json` that can't be read, parsed or migrated is renamed to `library.corrupt-<unix secs>.json` before falling back to empty data, so the next save can't overwrite it (unit tests)
+- [x] **Manual lists**
+  - `add_to_list` / `remove_from_list` return the updated `GameList` and reject smart lists
+  - Game detail: Lists card to add or remove the game from manual lists
+  - Context menu on grid cards and list rows: Open, Launch, Add to list (submenu), Remove from the current list
+  - Delete list from the list header (`AggBar`) or by right-clicking it in the sidebar; deleting the active list returns to All games
+  - Empty manual lists get their own empty state instead of "Nothing matches"
+- [x] **`src/lib/components/ConfirmModal.svelte`** — title, body, confirm label, optional danger style; acts once on Enter or click
+- [x] **`src/lib/components/ContextMenu.svelte`** — items, separators, submenus, checked and disabled items; keyboard-triggered menus open at the element (`menuPoint`)
+- [x] **Free-form tags** — typed in the detail view, normalised by `normTag()` (trimmed, lowercase, single spaces, max 32 chars); suggestions from `allTags()`: library tags plus `ALLTAGS`, most used first
+- [x] **Settings → Local data**
+  - Real `library.json` path, home shown as `~` (`get_library_path`)
+  - Reveal in Finder selects the file (`reveal_library`, takes no path)
+  - Export JSON through a save dialog (`tauri-plugin-dialog`, `dialog:allow-save` only) → `export_json_to` writes the library without credentials, via a temp file
+- [x] **Last played timestamp** — `GameCopy.lastPlayedAt` (unix secs) from Steam's `rtime_last_played`, kept when duplicates merge; the relative label is computed at render time; the recent sort, the recent filter, `primaryCopy()` and the launch copy picker (`pick_copy`) use it; older libraries fall back to an estimate from the stored `last` label
+- [x] **Confirm before launching** — when on, launching asks through `ConfirmModal`
+- [x] **Auto-sync on open** — when on and accounts exist, boot runs `syncAll()` (which starts the score job via `sync_account`) instead of `start_score_refresh`; one failing account no longer stops the others
+
+### Later
+
+- [ ] Notes are saved on every keystroke; debounce the `patch_game` call
+- [ ] Tags stored before normalisation keep their casing; normalise them in a migration
+- [ ] Adding tags in quick succession can race (each patch sends the whole tag array)
+- [ ] Drop the legacy `last` label in a future migration, once `lastPlayedAt` is filled everywhere

@@ -20,11 +20,11 @@ Everything lives in a single file on your machine. There is no Cartridge account
   - **Epic:** owned games and store metadata; Epic doesn't expose playtime.
   - A game you own on more than one store becomes one entry with several copies.
 - **Downloads cover art** and keeps it locally.
-- **Lets you add your own layer:** status (backlog, playing, beaten, dropped, wishlist), a 1–5 star rating, tags, notes, links and custom fields.
-- **Organises games in lists**, either manual or smart (saved filters).
+- **Lets you add your own layer:** status (backlog, playing, beaten, dropped, wishlist), a 1–5 star rating, free-form tags (with suggestions from tags you already use), notes, links and custom fields.
+- **Organises games in lists**, either manual or smart (saved filters). Add games to a manual list from the game's page or by right-clicking them in the library. Lists can be deleted from the list header or by right-clicking them in the sidebar.
 - **Shows scores:** Steam user reviews (% positive) and the Metascore, also for games you own only on GOG or Epic (see [Scores](#scores)).
 - **Has grid and list views**, with search, sorting and filters by genre, store, status, release year and minimum score.
-- **Launches games** by handing off to the Steam, GOG Galaxy or Epic launcher, which needs to be installed.
+- **Launches games** by handing off to the Steam, GOG Galaxy or Epic launcher, which needs to be installed. Settings can ask you to confirm each launch, and sync all accounts when the app opens.
 
 ## Getting started
 
@@ -76,14 +76,13 @@ Cartridge fills in two scores, both from Steam's public store data. No API key i
 | Library (games, lists, your data, settings) | `~/Library/Application Support/com.cartridge.app/library.json` |
 | Cover art | `~/Library/Application Support/com.cartridge.app/covers/` |
 
-- **Backups:** to back up your library, copy `library.json`. It's written atomically, so a crash can't leave it half-written.
+- **Backups:** to back up your library, copy `library.json`; **Reveal in Finder** in Settings → Local data shows it. It's written atomically, so a crash can't leave it half-written. If Cartridge can't read the file when it starts, it moves it aside as `library.corrupt-<time>.json` in the same folder and starts with an empty library, instead of overwriting it.
+- **Export:** **Export JSON** in Settings → Local data saves a copy of your library wherever you choose. Credentials are not included.
 - **Credentials:** your Steam API key and your GOG and Epic sign-in tokens are stored in the same file. They are not encrypted, so anyone who can read your user files can read them. They are never passed to the app's interface.
 - **Network:** Cartridge connects only to Steam, GOG and Epic, to import libraries, covers and scores. Fonts and everything else in the interface ship with the app.
 
 ## Not done yet
 
-- **Settings buttons:** "Export JSON" and "Reveal in Finder" are shown in Settings but don't do anything yet.
-- **Settings toggles:** "Auto-sync" and "Confirm before launching" are saved but have no effect yet.
 - **Score refresh progress:** there's no progress indicator for the background score refresh; it's only visible in the `pnpm tauri dev` console as `[Scores]` lines.
 - **Platforms:** Windows and Linux builds are untested.
 
