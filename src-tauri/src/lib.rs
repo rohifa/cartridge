@@ -12,6 +12,7 @@ use store::AppStore;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let store = AppStore::load(app.handle());
             app.manage(Mutex::new(store));
@@ -22,6 +23,7 @@ pub fn run() {
             commands::data::patch_game,
             commands::data::save_prefs,
             commands::data::export_json,
+            commands::data::export_json_to,
             commands::lists::create_list,
             commands::lists::delete_list,
             commands::lists::add_to_list,
@@ -37,7 +39,7 @@ pub fn run() {
             commands::scores::reject_steam_match,
             commands::scores::auto_steam_match,
             commands::fs::get_library_path,
-            commands::fs::reveal_in_finder,
+            commands::fs::reveal_library,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

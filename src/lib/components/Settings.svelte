@@ -8,6 +8,8 @@
     syncingIds,
     prefs,
     theme,
+    libraryPath,
+    exporting,
     onSync,
     onSetPref,
     onTheme,
@@ -15,11 +17,16 @@
     onEditAccount,
     onRemoveAccount,
     onReauth,
+    onReveal,
+    onExport,
   }: {
     data: CartridgeData;
     syncingIds: Set<string>;
     prefs: Prefs;
     theme: 'dark' | 'light';
+    /// Display path of library.json, home abbreviated to `~`; empty until loaded.
+    libraryPath: string;
+    exporting: boolean;
     onSync: (id: string) => void;
     onSetPref: <K extends keyof Prefs>(key: K, val: Prefs[K]) => void;
     onTheme: (t: 'dark' | 'light') => void;
@@ -27,6 +34,8 @@
     onEditAccount: (account: Account) => void;
     onRemoveAccount: (id: string) => void;
     onReauth: (platform: string) => void;
+    onReveal: () => void;
+    onExport: () => void;
   } = $props();
 </script>
 
@@ -233,18 +242,18 @@
         <div class="pref-row">
           <div class="pref-text">
             <div class="pref-label">Library file</div>
-            <div class="pref-desc file-path">
-              ~/Library/Application Support/Cartridge/library.db
-            </div>
+            <div class="pref-desc file-path" title={libraryPath}>{libraryPath || '…'}</div>
           </div>
-          <button class="action-btn">Reveal in Finder</button>
+          <button class="action-btn" disabled={!libraryPath} onclick={onReveal}>Reveal in Finder</button>
         </div>
         <div class="pref-row last">
           <div class="pref-text">
             <div class="pref-label">Export library</div>
             <div class="pref-desc">Save a JSON snapshot of your games and custom data.</div>
           </div>
-          <button class="action-btn">Export JSON</button>
+          <button class="action-btn" disabled={exporting} onclick={onExport}>
+            {exporting ? 'Exporting…' : 'Export JSON'}
+          </button>
         </div>
       </div>
     </div>
@@ -548,6 +557,7 @@
   .file-path {
     font-family: var(--font-mono);
     font-size: 11px;
+    overflow-wrap: anywhere;
   }
 
   /* ── Segmented control ── */
@@ -634,6 +644,11 @@
     cursor: pointer;
     white-space: nowrap;
     flex: none;
+  }
+
+  .action-btn:disabled {
+    cursor: default;
+    opacity: 0.7;
   }
 
   .spin {

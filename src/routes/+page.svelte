@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
+  import { save } from '@tauri-apps/plugin-dialog';
   import Sidebar from '$lib/components/Sidebar.svelte';
   import Toolbar from '$lib/components/Toolbar.svelte';
   import FilterPanel from '$lib/components/FilterPanel.svelte';
@@ -31,6 +32,9 @@
     setSteamMatch,
     rejectSteamMatch,
     autoSteamMatch,
+    exportJsonTo,
+    getLibraryPath,
+    revealLibrary as apiRevealLibrary,
   } from '$lib/api.js';
   import { allTags, matchFilters, primaryCopy, totalPlaytime } from '$lib/utils.js';
   import { PLAT, LISTDOT } from '$lib/constants.js';
@@ -82,6 +86,8 @@
   let syncNotifTimer    = 0;
   let menu              = $state<{ x: number; y: number; items: MenuItem[]; label: string } | null>(null);
   let confirmReq        = $state<ConfirmRequest | null>(null);
+  let libraryPath       = $state('');
+  let exporting         = $state(false);
 
   type ConfirmRequest = {
     title: string;
@@ -117,6 +123,12 @@
     } catch (e) {
       console.error('loadData failed:', e);
     }
+  });
+
+  onMount(() => {
+    getLibraryPath()
+      .then(p => { libraryPath = p; })
+      .catch(e => console.error('getLibraryPath failed:', e));
   });
 
   // ── Theme persistence (localStorage) ─────────────────────────────────────
@@ -280,6 +292,33 @@
     }
   }
 
+  async function revealLibrary() {
+    try {
+      await apiRevealLibrary();
+    } catch (e) {
+      showSyncNotif(false, String(e));
+    }
+  }
+
+  async function exportLibrary() {
+    if (exporting) return;
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const defaultPath = `cartridge-export-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
+    exporting = true;
+    try {
+      const path = await save({ defaultPath, filters: [{ name: 'JSON', extensions: ['json'] }] });
+      if (!path) return; // cancelled
+      const count = await exportJsonTo(path);
+      const file = path.split(/[\\/]/).pop();
+      showSyncNotif(true, `Exported ${count.toLocaleString('en-US')} game${count === 1 ? '' : 's'} to ${file}.`);
+    } catch (e) {
+      showSyncNotif(false, String(e));
+    } finally {
+      exporting = false;
+    }
+  }
+
   async function syncOne(id: string) {
     if (syncingIds.has(id)) return;
     syncingIds = new Set([...syncingIds, id]);
@@ -439,6 +478,8 @@
         {syncingIds}
         {prefs}
         {theme}
+        {libraryPath}
+        {exporting}
         onSync={syncOne}
         onSetPref={setPref}
         onTheme={(t) => { theme = t; }}
@@ -449,6 +490,8 @@
           accounts = accounts.filter(a => a.id !== id);
         }}
         onReauth={reauth}
+        onReveal={revealLibrary}
+        onExport={exportLibrary}
       />
 
     {:else if selected}

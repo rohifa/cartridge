@@ -8,6 +8,8 @@ export const loadData  = ()                    => invoke<CartridgeData>('load_da
 export const patchGame = (id: number, patch: GamePatch) => invoke<Game>('patch_game', { id, patch });
 export const savePrefs = (prefs: Prefs)        => invoke<void>('save_prefs', { prefs });
 export const exportJson = ()                   => invoke<string>('export_json');
+/// Writes the library (without credentials) to `path`; returns the game count.
+export const exportJsonTo = (path: string)     => invoke<number>('export_json_to', { path });
 
 // ── Lists ─────────────────────────────────────────────────────────────────────
 
@@ -40,5 +42,7 @@ export const autoSteamMatch    = (gameId: number)                => invoke<Game>
 
 // ── Filesystem ────────────────────────────────────────────────────────────────
 
-export const getLibraryPath = ()                => invoke<string>('get_library_path');
-export const revealInFinder = (path: string)   => invoke<void>('reveal_in_finder', { path });
+/// Path of library.json for display, with the home directory as `~`.
+export const getLibraryPath = () => invoke<string>('get_library_path');
+/// Opens Finder with library.json selected.
+export const revealLibrary  = () => invoke<void>('reveal_library');

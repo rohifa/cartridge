@@ -69,13 +69,13 @@ cartridge/
 │   ├── store.rs                # AppStore: load, atomic save, patch_game, sanitized_data
 │   └── commands/
 │       ├── mod.rs
-│       ├── data.rs             # load_data, patch_game, save_prefs, export_json
+│       ├── data.rs             # load_data, patch_game, save_prefs, export_json, export_json_to
 │       ├── lists.rs            # create_list, delete_list, add_to_list, remove_from_list
 │       ├── launch.rs           # launch_game (platform deep links), open_url
 │       ├── sync.rs             # add_steam_account, start_oauth_flow, sync_account, remove_account;
 │       │                       #   cross-platform duplicate merging
 │       ├── scores.rs           # Steam reviews + Metacritic, title matching, background score job
-│       └── fs.rs               # get_library_path, reveal_in_finder
+│       └── fs.rs               # get_library_path (~-abbreviated), reveal_library
 ├── static/
 │   ├── covers/                 # bundled cover art (*.png)
 │   ├── fonts/                  # Geist + Geist Mono, variable woff2 (SIL OFL); @font-face in global.css
