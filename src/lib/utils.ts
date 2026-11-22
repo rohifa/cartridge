@@ -1,5 +1,6 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import type { Game, GameCopy, Filters } from './types.js';
+import { ALLTAGS } from './constants.js';
 
 export function fmtHours(h: number | null): string {
   if (h == null) return '— h';
@@ -29,7 +30,7 @@ export function coverSrc(game: Game): string | null {
   return `/covers/${game.cover}.png`;
 }
 
-/// Days since last played, from the relative label the backend stores
+/// Days since last played, from the relative label older builds stored
 /// ("today", "yesterday", "3 days ago", "2 weeks ago", "5 months ago", "1 years ago").
 /// Unknown / never played → Infinity.
 function lastPlayedDays(last: string | null | undefined): number {
@@ -42,6 +43,45 @@ function lastPlayedDays(last: string | null | undefined): number {
   return n * ({ day: 1, week: 7, month: 30, year: 365 } as const)[m[2] as 'day' | 'week' | 'month' | 'year'];
 }
 
+const DAY = 86400;
+const nowSecs = () => Math.floor(Date.now() / 1000);
+
+/// Unix secs of the copy's last session. Falls back to an estimate from the
+/// legacy relative label (snapped to a day, so equal labels compare equal);
+/// null when never played or unknown.
+export function lastPlayedTs(copy: GameCopy): number | null {
+  if (copy.lastPlayedAt != null) return copy.lastPlayedAt;
+  const days = lastPlayedDays(copy.last);
+  if (!Number.isFinite(days)) return null;
+  return (Math.floor(nowSecs() / DAY) - days) * DAY;
+}
+
+/// Most recent session across all copies of a game.
+export function gameLastPlayed(game: Game): number | null {
+  let best: number | null = null;
+  for (const c of game.copies) {
+    const t = lastPlayedTs(c);
+    if (t != null && (best == null || t > best)) best = t;
+  }
+  return best;
+}
+
+/// Relative label for the copy's last session, computed now.
+export function fmtLastPlayed(copy: GameCopy): string | null {
+  if (copy.lastPlayedAt == null) {
+    // Legacy label only: show it as stored, minus the old "1 years ago" plural.
+    return copy.last?.replace(/^1 (day|week|month|year)s ago$/, '1 $1 ago') ?? null;
+  }
+  const days = Math.max(0, Math.floor((nowSecs() - copy.lastPlayedAt) / DAY));
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  const ago = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'} ago`;
+  if (days < 7)   return ago(days, 'day');
+  if (days < 30)  return ago(Math.floor(days / 7), 'week');
+  if (days < 365) return ago(Math.floor(days / 30), 'month');
+  return ago(Math.floor(days / 365), 'year');
+}
+
 /// Get primary copy for display (installed > most recent > first)
 export function primaryCopy(game: Game): GameCopy | null {
   if (game.copies.length === 0) return null;
@@ -50,7 +90,7 @@ export function primaryCopy(game: Game): GameCopy | null {
     if (c.installed && !best.installed) return c;
     if (!c.installed && best.installed) return best;
     // Then prefer most recently played
-    if (lastPlayedDays(c.last) < lastPlayedDays(best.last)) return c;
+    if ((lastPlayedTs(c) ?? -Infinity) > (lastPlayedTs(best) ?? -Infinity)) return c;
     return best;
   });
 }
@@ -73,4 +113,20 @@ export function matchFilters(g: Game, f: Partial<Filters> | null | undefined): b
   const playtime = totalPlaytime(g);
   if (f.playtimeMax != null && !(playtime != null && playtime <= f.playtimeMax))    return false;
   return true;
+}
+
+export const TAG_MAX = 32;
+
+/// A typed tag as it is stored: trimmed, lowercase, single spaces, at most 32 chars.
+export function normTag(raw: string): string {
+  return raw.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, TAG_MAX).trim();
+}
+
+/// Every tag in the library plus the built-in ones, most used first, then A–Z.
+export function allTags(games: Game[]): string[] {
+  const counts = new Map<string, number>(ALLTAGS.map(t => [t, 0]));
+  for (const g of games) for (const t of g.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
+  return [...counts]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([t]) => t);
 }

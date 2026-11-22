@@ -8,13 +8,16 @@ export const loadData  = ()                    => invoke<CartridgeData>('load_da
 export const patchGame = (id: number, patch: GamePatch) => invoke<Game>('patch_game', { id, patch });
 export const savePrefs = (prefs: Prefs)        => invoke<void>('save_prefs', { prefs });
 export const exportJson = ()                   => invoke<string>('export_json');
+/// Writes the library (without credentials) to `path`; returns the game count.
+export const exportJsonTo = (path: string)     => invoke<number>('export_json_to', { path });
 
 // ── Lists ─────────────────────────────────────────────────────────────────────
 
 export const createList     = (list: GameList)                    => invoke<GameList>('create_list', { list });
 export const deleteList     = (id: string)                        => invoke<void>('delete_list', { id });
-export const addToList      = (listId: string, gameId: number)    => invoke<void>('add_to_list', { listId, gameId });
-export const removeFromList = (listId: string, gameId: number)    => invoke<void>('remove_from_list', { listId, gameId });
+/// Both return the updated list. Manual lists only; smart lists are rejected.
+export const addToList      = (listId: string, gameId: number)    => invoke<GameList>('add_to_list', { listId, gameId });
+export const removeFromList = (listId: string, gameId: number)    => invoke<GameList>('remove_from_list', { listId, gameId });
 
 // ── Launch ────────────────────────────────────────────────────────────────────
 
@@ -39,5 +42,7 @@ export const autoSteamMatch    = (gameId: number)                => invoke<Game>
 
 // ── Filesystem ────────────────────────────────────────────────────────────────
 
-export const getLibraryPath = ()                => invoke<string>('get_library_path');
-export const revealInFinder = (path: string)   => invoke<void>('reveal_in_finder', { path });
+/// Path of library.json for display, with the home directory as `~`.
+export const getLibraryPath = () => invoke<string>('get_library_path');
+/// Opens Finder with library.json selected.
+export const revealLibrary  = () => invoke<void>('reveal_library');

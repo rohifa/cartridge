@@ -13,12 +13,14 @@
     showScores,
     onSelect,
     onLaunch,
+    onContextMenu,
   }: {
     games: Game[];
     selectedId: number | null;
     showScores: boolean;
     onSelect: (id: number) => void;
     onLaunch: (g: Game) => void;
+    onContextMenu?: (e: MouseEvent, g: Game) => void;
   } = $props();
 
   const cols = $derived(showScores
@@ -50,6 +52,7 @@
       role="button"
       tabindex="0"
       onkeydown={(e) => e.key === 'Enter' && onSelect(g.id)}
+      oncontextmenu={(e) => { if (onContextMenu) { e.preventDefault(); onContextMenu(e, g); } }}
     >
       <!-- Thumbnail -->
       {#if coverSrc(g)}

@@ -7,27 +7,38 @@
   import Tag from './Tag.svelte';
   import Icon from './Icon.svelte';
   import PlatIcon from './PlatIcon.svelte';
-  import { PLAT, STATUS_META, SCORE_SOURCES } from '$lib/constants.js';
-  import { fmtHours, fmtReviews, primaryCopy, totalPlaytime } from '$lib/utils.js';
-  import type { Game, SteamMatchAction } from '$lib/types.js';
+  import { tick } from 'svelte';
+  import { PLAT, STATUS_META, SCORE_SOURCES, LISTDOT } from '$lib/constants.js';
+  import { fmtHours, fmtLastPlayed, fmtReviews, matchFilters, normTag, primaryCopy, totalPlaytime, TAG_MAX } from '$lib/utils.js';
+  import type { Game, GameList, SteamMatchAction } from '$lib/types.js';
 
   let {
     game,
+    lists,
+    knownTags,
     onBack,
     onPatch,
     onSteamMatch,
-    onAddTag,
     onLaunch,
+    onToggleList,
+    onCreateList,
   }: {
     game: Game;
+    lists: GameList[];
+    knownTags: string[];
     onBack: () => void;
     onPatch: (id: number, delta: Partial<Game>) => void;
     onSteamMatch: (id: number, action: SteamMatchAction) => Promise<void>;
-    onAddTag: (g: Game) => void;
     onLaunch: (g: Game) => void;
+    onToggleList: (listId: string, gameId: number) => void;
+    onCreateList: () => void;
   } = $props();
 
   const primary = $derived(primaryCopy(game));
+
+  // ── Lists: manual ones are editable, smart ones only report a match ──────
+  const manualLists  = $derived(lists.filter(l => l.kind === 'manual'));
+  const smartMatches = $derived(lists.filter(l => l.kind === 'smart' && matchFilters(game, l.rules ?? {})));
 
   // ── Steam match (games with no Steam copy take Steam scores from a match) ──
   const hasSteamCopy = $derived(game.copies.some(c => c.platform === 'steam'));
@@ -36,8 +47,61 @@
   let matchError   = $state('');
   let matchBusy    = $state(false);
 
-  // Reset the editor when another game is shown — not when the same game is
-  // replaced by an update (background score events would close it mid-typing).
+  // ── Tag entry: typed freely, suggestions from the library ───────────────
+  let tagEditing = $state(false);
+  let tagInput   = $state('');
+  let tagActive  = $state(-1);   // highlighted suggestion, -1 = the typed text
+  let addTagBtn  = $state<HTMLButtonElement | null>(null);
+
+  const tagQuery = $derived(normTag(tagInput));
+  const tagSuggestions = $derived(
+    tagEditing
+      ? knownTags.filter(t => !game.tags.includes(t) && t.startsWith(tagQuery)).slice(0, 8)
+      : []
+  );
+  const activeTag = $derived(tagSuggestions[tagActive] ?? null);
+
+  function openTagEntry() {
+    tagEditing = true;
+    tagInput = '';
+    tagActive = -1;
+  }
+
+  function closeTagEntry() {
+    tagEditing = false;
+    tagInput = '';
+    tagActive = -1;
+  }
+
+  /// Adds the tag and keeps the input open and empty for the next one.
+  function commitTag(raw: string) {
+    const t = normTag(raw);
+    if (t && !game.tags.includes(t)) onPatch(game.id, { tags: [...game.tags, t] });
+    tagInput = '';
+    tagActive = -1;
+  }
+
+  async function onTagKey(e: KeyboardEvent) {
+    const n = tagSuggestions.length;
+    if (e.key === 'ArrowDown' && n > 0) {
+      e.preventDefault();
+      tagActive = tagActive >= n - 1 ? -1 : tagActive + 1;
+    } else if (e.key === 'ArrowUp' && n > 0) {
+      e.preventDefault();
+      tagActive = tagActive <= -1 ? n - 1 : tagActive - 1;
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      commitTag(activeTag ?? tagInput);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeTagEntry();
+      await tick();
+      addTagBtn?.focus();
+    }
+  }
+
+  // Reset the editors when another game is shown — not when the same game is
+  // replaced by an update (background score events would close them mid-typing).
   let matchForId: number | null = null;
   $effect(() => {
     const id = game.id;
@@ -45,6 +109,7 @@
       matchEditing = false;
       matchInput = '';
       matchError = '';
+      closeTagEntry();
     }
     matchForId = id;
   });
@@ -228,6 +293,7 @@
               </div>
               <div class="copies-list">
                 {#each game.copies as copy}
+                  {@const lastPlayed = fmtLastPlayed(copy)}
                   <div class="copy-row">
                     <PlatIcon platform={copy.platform} size={18} />
                     <div class="copy-info">
@@ -236,8 +302,8 @@
                         {#if copy.playtime != null}
                           <span>{fmtHours(copy.playtime)}</span>
                         {/if}
-                        {#if copy.last}
-                          <span>· {copy.last}</span>
+                        {#if lastPlayed}
+                          <span>· {lastPlayed}</span>
                         {/if}
                         {#if copy.installed}
                           <span>· Installed</span>
@@ -310,13 +376,61 @@
             {#each game.tags as t}
               <Tag label={t} onRemove={() => onPatch(game.id, { tags: game.tags.filter(x => x !== t) })} />
             {/each}
-            <span
-              class="add-tag"
-              role="button"
-              tabindex="0"
-              onclick={() => onAddTag(game)}
-              onkeydown={(e) => e.key === 'Enter' && onAddTag(game)}
-            >+ tag</span>
+            {#if tagEditing}
+              <div class="tag-entry">
+                <input
+                  class="tag-input"
+                  type="text"
+                  role="combobox"
+                  aria-label="New tag"
+                  aria-autocomplete="list"
+                  aria-expanded={tagSuggestions.length > 0}
+                  aria-controls="tag-suggestions"
+                  aria-activedescendant={activeTag ? `tag-suggestion-${tagActive}` : undefined}
+                  placeholder="tag name"
+                  maxlength={TAG_MAX}
+                  autocomplete="off"
+                  spellcheck="false"
+                  bind:value={tagInput}
+                  use:focusOnMount
+                  oninput={() => { tagActive = -1; }}
+                  onkeydown={onTagKey}
+                  onblur={closeTagEntry}
+                />
+                {#if tagSuggestions.length > 0}
+                  <!-- mousedown is cancelled so the input keeps focus (no blur) and the click lands. -->
+                  <ul
+                    class="tag-suggestions"
+                    id="tag-suggestions"
+                    role="listbox"
+                    aria-label="Tag suggestions"
+                    onmousedown={(e) => e.preventDefault()}
+                  >
+                    {#each tagSuggestions as t, i (t)}
+                      <!-- Keys are handled on the combobox input (aria-activedescendant). -->
+                      <!-- svelte-ignore a11y_click_events_have_key_events -->
+                      <li
+                        id="tag-suggestion-{i}"
+                        class="tag-option"
+                        class:active={i === tagActive}
+                        role="option"
+                        aria-selected={i === tagActive}
+                        tabindex="-1"
+                        onclick={() => commitTag(t)}
+                        onpointerenter={() => { tagActive = i; }}
+                      >{t}</li>
+                    {/each}
+                  </ul>
+                {/if}
+              </div>
+            {:else}
+              <button
+                class="add-tag"
+                type="button"
+                bind:this={addTagBtn}
+                onclick={openTagEntry}
+              >+ tag</button>
+            {/if}
           </div>
           <div class="field-label" style="margin-top:16px; margin-bottom:7px">Notes</div>
           <textarea
@@ -325,6 +439,42 @@
             value={game.note}
             oninput={(e) => onPatch(game.id, { note: (e.target as HTMLTextAreaElement).value })}
           ></textarea>
+        </section>
+
+        <!-- Lists -->
+        <section class="card">
+          <div class="card-head">
+            <span class="card-title">Lists</span>
+          </div>
+          {#if manualLists.length === 0}
+            <p class="empty-hint">
+              No manual lists yet.
+              <button class="match-link" onclick={onCreateList}>New list…</button>
+            </p>
+          {/if}
+          <div class="list-rows">
+            {#each manualLists as l (l.id)}
+              <label class="list-row">
+                <!-- The box follows the saved state: the click is cancelled and
+                     the row re-renders once Rust returns the updated list. -->
+                <input
+                  type="checkbox"
+                  checked={(l.gameIds ?? []).includes(game.id)}
+                  onclick={(e) => { e.preventDefault(); onToggleList(l.id, game.id); }}
+                />
+                <span class="list-dot" style="background:{LISTDOT[l.color]}"></span>
+                <span class="list-name">{l.name}</span>
+              </label>
+            {/each}
+            {#each smartMatches as l (l.id)}
+              <div class="list-row readonly" title="Smart lists fill themselves from their filters">
+                <Icon name="zap" size={13} color="var(--fg-3)" />
+                <span class="list-dot" style="background:{LISTDOT[l.color]}"></span>
+                <span class="list-name">{l.name}</span>
+                <span class="list-note">matches filters</span>
+              </div>
+            {/each}
+          </div>
         </section>
 
         <!-- Links -->
@@ -815,21 +965,70 @@
   .tag-row {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 7px;
   }
 
-  .add-tag {
+  /* "+ tag" and its input share one box so the row doesn't jump. */
+  .add-tag,
+  .tag-input {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    height: 22px;
+    padding: 0 9px;
+    border-radius: var(--radius-full);
     font-family: var(--font-mono);
     font-size: 11px;
-    padding: 3px 9px;
-    border-radius: var(--radius-full);
+    line-height: 1;
+  }
+
+  .add-tag {
     border: 1px dashed var(--border-2);
+    background: transparent;
     color: var(--fg-3);
     cursor: pointer;
   }
+  .add-tag:hover { color: var(--fg-2); border-color: var(--fg-3); }
+
+  .tag-entry { position: relative; }
+
+  .tag-input {
+    width: 20ch;
+    border: 1px solid var(--accent);
+    background: var(--bg-3);
+    color: var(--fg-1);
+    outline: none;
+  }
+  .tag-input::placeholder { color: var(--fg-3); }
+
+  .tag-suggestions {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 20;
+    min-width: 100%;
+    max-width: 260px;
+    margin: 0;
+    padding: 4px;
+    list-style: none;
+    background: var(--bg-2);
+    border: 1px solid var(--border-2);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+  }
+
+  .tag-option {
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+  }
+  .tag-option.active { background: var(--bg-3); color: var(--fg-1); }
 
   .notes {
     width: 100%;
@@ -845,6 +1044,65 @@
     border-radius: var(--radius-sm);
     padding: 9px 11px;
     outline: none;
+  }
+
+  /* ── Lists ── */
+  .list-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .list-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 5px 6px;
+    margin: 0 -6px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    color: var(--fg-1);
+    cursor: pointer;
+  }
+
+  .list-row:hover { background: var(--bg-3); }
+
+  .list-row.readonly {
+    color: var(--fg-2);
+    cursor: default;
+  }
+
+  .list-row.readonly:hover { background: transparent; }
+
+  .list-row input {
+    width: 13px;
+    height: 13px;
+    margin: 0;
+    flex: none;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .list-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: none;
+  }
+
+  .list-name {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .list-note {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--fg-3);
+    flex: none;
   }
 
   /* ── Links ── */

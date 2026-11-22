@@ -69,7 +69,12 @@ pub struct GameCopy {
     pub account_id: Option<String>,
     pub installed: bool,
     pub playtime: Option<f64>,
+    /// Relative label from sync time ("3 days ago"). Kept for older builds;
+    /// the frontend prefers `last_played_at`.
     pub last: Option<String>,
+    /// Unix time (seconds) of the last session, when the platform reports it.
+    #[serde(default)]
+    pub last_played_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,13 +83,13 @@ pub struct Game {
     pub id: u64,
     pub title: String,
     pub cover: Option<String>,
-    
+
     // User-owned, game-level data
     pub rating: u8,
     pub status: GameStatus,
     pub tags: Vec<String>,
     pub note: String,
-    
+
     // Store metadata (same across platforms)
     pub genre: Vec<String>,
     pub dev: String,
@@ -115,7 +120,7 @@ pub struct Game {
     pub steam_match_rev: u32,
     pub links: HashMap<String, String>,
     pub custom: Vec<CustomField>,
-    
+
     // Platform-specific copies
     pub copies: Vec<GameCopy>,
 }
