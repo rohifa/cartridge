@@ -7,27 +7,37 @@
   import Tag from './Tag.svelte';
   import Icon from './Icon.svelte';
   import PlatIcon from './PlatIcon.svelte';
-  import { PLAT, STATUS_META, SCORE_SOURCES } from '$lib/constants.js';
-  import { fmtHours, fmtReviews, primaryCopy, totalPlaytime } from '$lib/utils.js';
-  import type { Game, SteamMatchAction } from '$lib/types.js';
+  import { PLAT, STATUS_META, SCORE_SOURCES, LISTDOT } from '$lib/constants.js';
+  import { fmtHours, fmtReviews, matchFilters, primaryCopy, totalPlaytime } from '$lib/utils.js';
+  import type { Game, GameList, SteamMatchAction } from '$lib/types.js';
 
   let {
     game,
+    lists,
     onBack,
     onPatch,
     onSteamMatch,
     onAddTag,
     onLaunch,
+    onToggleList,
+    onCreateList,
   }: {
     game: Game;
+    lists: GameList[];
     onBack: () => void;
     onPatch: (id: number, delta: Partial<Game>) => void;
     onSteamMatch: (id: number, action: SteamMatchAction) => Promise<void>;
     onAddTag: (g: Game) => void;
     onLaunch: (g: Game) => void;
+    onToggleList: (listId: string, gameId: number) => void;
+    onCreateList: () => void;
   } = $props();
 
   const primary = $derived(primaryCopy(game));
+
+  // ── Lists: manual ones are editable, smart ones only report a match ──────
+  const manualLists  = $derived(lists.filter(l => l.kind === 'manual'));
+  const smartMatches = $derived(lists.filter(l => l.kind === 'smart' && matchFilters(game, l.rules ?? {})));
 
   // ── Steam match (games with no Steam copy take Steam scores from a match) ──
   const hasSteamCopy = $derived(game.copies.some(c => c.platform === 'steam'));
@@ -325,6 +335,42 @@
             value={game.note}
             oninput={(e) => onPatch(game.id, { note: (e.target as HTMLTextAreaElement).value })}
           ></textarea>
+        </section>
+
+        <!-- Lists -->
+        <section class="card">
+          <div class="card-head">
+            <span class="card-title">Lists</span>
+          </div>
+          {#if manualLists.length === 0}
+            <p class="empty-hint">
+              No manual lists yet.
+              <button class="match-link" onclick={onCreateList}>New list…</button>
+            </p>
+          {/if}
+          <div class="list-rows">
+            {#each manualLists as l (l.id)}
+              <label class="list-row">
+                <!-- The box follows the saved state: the click is cancelled and
+                     the row re-renders once Rust returns the updated list. -->
+                <input
+                  type="checkbox"
+                  checked={(l.gameIds ?? []).includes(game.id)}
+                  onclick={(e) => { e.preventDefault(); onToggleList(l.id, game.id); }}
+                />
+                <span class="list-dot" style="background:{LISTDOT[l.color]}"></span>
+                <span class="list-name">{l.name}</span>
+              </label>
+            {/each}
+            {#each smartMatches as l (l.id)}
+              <div class="list-row readonly" title="Smart lists fill themselves from their filters">
+                <Icon name="zap" size={13} color="var(--fg-3)" />
+                <span class="list-dot" style="background:{LISTDOT[l.color]}"></span>
+                <span class="list-name">{l.name}</span>
+                <span class="list-note">matches filters</span>
+              </div>
+            {/each}
+          </div>
         </section>
 
         <!-- Links -->
@@ -845,6 +891,65 @@
     border-radius: var(--radius-sm);
     padding: 9px 11px;
     outline: none;
+  }
+
+  /* ── Lists ── */
+  .list-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .list-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 5px 6px;
+    margin: 0 -6px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    color: var(--fg-1);
+    cursor: pointer;
+  }
+
+  .list-row:hover { background: var(--bg-3); }
+
+  .list-row.readonly {
+    color: var(--fg-2);
+    cursor: default;
+  }
+
+  .list-row.readonly:hover { background: transparent; }
+
+  .list-row input {
+    width: 13px;
+    height: 13px;
+    margin: 0;
+    flex: none;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .list-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: none;
+  }
+
+  .list-name {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .list-note {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--fg-3);
+    flex: none;
   }
 
   /* ── Links ── */

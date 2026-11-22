@@ -13,6 +13,7 @@
     onNavigate,
     onFilter,
     onCreateList,
+    onListMenu,
   }: {
     data: CartridgeData;
     view: AppView;
@@ -21,6 +22,7 @@
     onNavigate: (v: AppView) => void;
     onFilter: (f: SidebarFilter) => void;
     onCreateList: () => void;
+    onListMenu?: (e: MouseEvent, list: GameList) => void;
   } = $props();
 
   const total        = $derived(data.games.length);
@@ -42,6 +44,7 @@
   platform?: Platform;
   kind?: string;
   onClick: () => void;
+  onContextMenu?: (e: MouseEvent) => void;
 })}
   <div
     class="nav-item"
@@ -50,6 +53,7 @@
     role="button"
     tabindex="0"
     onkeydown={(e) => e.key === 'Enter' && opts.onClick()}
+    oncontextmenu={opts.onContextMenu && ((e) => { e.preventDefault(); opts.onContextMenu?.(e); })}
   >
     {#if opts.platform}
       <span class="nav-platform-icon">
@@ -111,6 +115,7 @@
       count:  listCount(list),
       active: isLib && filter.type === 'list' && filterValue === list.id,
       onClick: () => onFilter({ type: 'list', value: list.id }),
+      onContextMenu: onListMenu && ((e) => onListMenu?.(e, list)),
     })}
   {/each}
   <div

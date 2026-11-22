@@ -13,8 +13,9 @@ export const exportJson = ()                   => invoke<string>('export_json');
 
 export const createList     = (list: GameList)                    => invoke<GameList>('create_list', { list });
 export const deleteList     = (id: string)                        => invoke<void>('delete_list', { id });
-export const addToList      = (listId: string, gameId: number)    => invoke<void>('add_to_list', { listId, gameId });
-export const removeFromList = (listId: string, gameId: number)    => invoke<void>('remove_from_list', { listId, gameId });
+/// Both return the updated list. Manual lists only; smart lists are rejected.
+export const addToList      = (listId: string, gameId: number)    => invoke<GameList>('add_to_list', { listId, gameId });
+export const removeFromList = (listId: string, gameId: number)    => invoke<GameList>('remove_from_list', { listId, gameId });
 
 // ── Launch ────────────────────────────────────────────────────────────────────
 

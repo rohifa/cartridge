@@ -8,9 +8,11 @@
   let {
     games,
     listMeta = null,
+    onDeleteList,
   }: {
     games: Game[];
     listMeta?: GameList | null;
+    onDeleteList?: (list: GameList) => void;
   } = $props();
 
   const totalGames   = $derived(games.length);
@@ -36,6 +38,13 @@
         </span>
       {:else}
         <span class="kind-badge manual">MANUAL</span>
+      {/if}
+      {#if onDeleteList}
+        {@const list = listMeta}
+        <button class="delete-list" onclick={() => onDeleteList?.(list)}>
+          <Icon name="trash-2" size={12} />
+          Delete list
+        </button>
       {/if}
     </div>
   {/if}
@@ -112,6 +121,29 @@
 
   .kind-badge.manual {
     color: var(--fg-3);
+  }
+
+  .delete-list {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: 4px;
+    padding: 3px 7px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--fg-3);
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .delete-list:hover,
+  .delete-list:focus-visible {
+    background: var(--bg-3);
+    color: var(--danger);
+    outline: none;
   }
 
   .stat {

@@ -12,6 +12,8 @@
   import AddAccountModal from '$lib/components/AddAccountModal.svelte';
   import CreateListModal from '$lib/components/CreateListModal.svelte';
   import LaunchToast from '$lib/components/LaunchToast.svelte';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import ContextMenu, { menuPoint, type MenuItem } from '$lib/components/ContextMenu.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import {
     loadData,
@@ -20,6 +22,9 @@
     syncAccount as apiSyncAccount,
     removeAccount as apiRemoveAccount,
     createList as apiCreateList,
+    deleteList as apiDeleteList,
+    addToList as apiAddToList,
+    removeFromList as apiRemoveFromList,
     savePrefs as apiSavePrefs,
     startOAuthFlow,
     startScoreRefresh,
@@ -28,7 +33,7 @@
     autoSteamMatch,
   } from '$lib/api.js';
   import { matchFilters, primaryCopy, totalPlaytime } from '$lib/utils.js';
-  import { PLAT, ALLTAGS } from '$lib/constants.js';
+  import { PLAT, ALLTAGS, LISTDOT } from '$lib/constants.js';
   import type {
     Game, GameList, GamePatch, SidebarFilter, AppView,
     Filters, Prefs, ListColor, ListKind, Account, CartridgeData, Platform, SteamMatchAction,
@@ -75,6 +80,16 @@
   let toast             = $state<{ title: string; platform: string } | null>(null);
   let syncNotif         = $state<{ ok: boolean; message: string } | null>(null);
   let syncNotifTimer    = 0;
+  let menu              = $state<{ x: number; y: number; items: MenuItem[]; label: string } | null>(null);
+  let confirmReq        = $state<ConfirmRequest | null>(null);
+
+  type ConfirmRequest = {
+    title: string;
+    body: string;
+    confirmLabel: string;
+    danger?: boolean;
+    onConfirm: () => void;
+  };
 
   // Background score refreshes in Rust push single-game updates.
   onMount(() => {
@@ -202,6 +217,14 @@
 
   const selected = $derived(games.find(g => g.id === selectedId) ?? null);
 
+  // An empty manual list gets its own empty state instead of "Nothing matches":
+  // no filter or query can be the reason nothing shows.
+  const emptyManualList = $derived.by(() => {
+    if (activeList?.kind !== 'manual') return false;
+    const ids = activeList.gameIds ?? [];
+    return !games.some(g => ids.includes(g.id));
+  });
+
   // ── Handlers — all mutations go through Rust ──────────────────────────────
   async function patch(id: number, fields: GamePatch) {
     const updated = await apiPatchGame(id, fields);
@@ -308,6 +331,87 @@
     view = 'library';
   }
 
+  function inList(list: GameList, gameId: number): boolean {
+    return list.kind === 'manual' && (list.gameIds ?? []).includes(gameId);
+  }
+
+  /// Adds the game to a manual list, or removes it if it's already there.
+  async function toggleInList(listId: string, gameId: number) {
+    const list = lists.find(l => l.id === listId);
+    if (!list || list.kind !== 'manual') return;
+    try {
+      const updated = inList(list, gameId)
+        ? await apiRemoveFromList(listId, gameId)
+        : await apiAddToList(listId, gameId);
+      lists = lists.map(l => l.id === listId ? updated : l);
+    } catch (e) {
+      showSyncNotif(false, String(e));
+    }
+  }
+
+  async function deleteList(id: string) {
+    try {
+      await apiDeleteList(id);
+      lists = lists.filter(l => l.id !== id);
+      if (filter.type === 'list' && filter.value === id) filter = { type: 'all' };
+    } catch (e) {
+      showSyncNotif(false, String(e));
+    }
+  }
+
+  function askDeleteList(list: GameList) {
+    confirmReq = {
+      title: `Delete "${list.name}"?`,
+      body: 'Games stay in your library.',
+      confirmLabel: 'Delete list',
+      danger: true,
+      onConfirm: () => deleteList(list.id),
+    };
+  }
+
+  function openCreateList() {
+    createFromFilters = false;
+    createOpen = true;
+  }
+
+  // ── Context menus ─────────────────────────────────────────────────────────
+  function openMenu(e: MouseEvent, label: string, items: MenuItem[]) {
+    menu = { ...menuPoint(e), label, items };
+  }
+
+  function gameMenu(e: MouseEvent, g: Game) {
+    const manual = lists.filter(l => l.kind === 'manual');
+    const listItems: MenuItem[] = manual.length > 0
+      ? manual.map(l => ({
+          label: l.name,
+          dot: LISTDOT[l.color],
+          checked: inList(l, g.id),
+          onSelect: () => toggleInList(l.id, g.id),
+        }))
+      : [
+          { label: 'No manual lists yet', disabled: true, onSelect: () => {} },
+          { kind: 'separator' },
+          { label: 'New list…', onSelect: openCreateList },
+        ];
+    const items: MenuItem[] = [
+      { label: 'Open', onSelect: () => { selectedId = g.id; } },
+      { label: 'Launch', disabled: !primaryCopy(g)?.installed, onSelect: () => launch(g) },
+      { kind: 'separator' },
+      { kind: 'submenu', label: 'Add to list', items: listItems },
+    ];
+    const current = activeList;
+    if (current?.kind === 'manual' && inList(current, g.id)) {
+      items.push({ label: `Remove from ${current.name}`, onSelect: () => toggleInList(current.id, g.id) });
+    }
+    openMenu(e, g.title, items);
+  }
+
+  function listMenu(e: MouseEvent, list: GameList) {
+    openMenu(e, list.name, [
+      { label: 'Delete list', danger: true, onSelect: () => askDeleteList(list) },
+    ]);
+  }
+
   function listCount(list: GameList): number {
     if (list.kind === 'manual') return (list.gameIds ?? []).length;
     return games.filter(g => matchFilters(g, list.rules ?? {})).length;
@@ -328,7 +432,8 @@
     {listCount}
     onNavigate={(v) => { view = v; selectedId = null; }}
     onFilter={(f) => { filter = f; view = 'library'; selectedId = null; }}
-    onCreateList={() => { createFromFilters = false; createOpen = true; }}
+    onCreateList={openCreateList}
+    onListMenu={listMenu}
   />
 
   <main>
@@ -353,11 +458,14 @@
     {:else if selected}
       <GameDetail
         game={selected}
+        {lists}
         onBack={() => { selectedId = null; }}
         onPatch={patch}
         onSteamMatch={steamMatch}
         onAddTag={addTag}
         onLaunch={launch}
+        onToggleList={toggleInList}
+        onCreateList={openCreateList}
       />
 
     {:else}
@@ -381,9 +489,15 @@
 
       <div class="content-area">
         <div class="library-col">
-          <AggBar games={filtered} listMeta={activeList} />
+          <AggBar games={filtered} listMeta={activeList} onDeleteList={askDeleteList} />
           <div class="scroll-area">
-            {#if filtered.length === 0}
+            {#if emptyManualList}
+              <div class="empty">
+                <Icon name="list" size={34} color="var(--fg-3)" />
+                <div class="empty-title">This list is empty</div>
+                <p class="empty-desc">Right-click a game, or use Lists on its page, to add it.</p>
+              </div>
+            {:else if filtered.length === 0}
               <div class="empty">
                 <Icon name="search-x" size={34} color="var(--fg-3)" />
                 <div class="empty-title">Nothing matches</div>
@@ -398,6 +512,7 @@
                 showScores={prefs.showScores}
                 onSelect={(id) => { selectedId = id; }}
                 onLaunch={launch}
+                onContextMenu={gameMenu}
               />
             {:else}
               <ListView
@@ -406,6 +521,7 @@
                 showScores={prefs.showScores}
                 onSelect={(id) => { selectedId = id; }}
                 onLaunch={launch}
+                onContextMenu={gameMenu}
               />
             {/if}
           </div>
@@ -447,6 +563,30 @@
     onClose={() => { createOpen = false; }}
     onCreate={createList}
   />
+{/if}
+
+{#if confirmReq}
+  {@const req = confirmReq}
+  <ConfirmModal
+    title={req.title}
+    body={req.body}
+    confirmLabel={req.confirmLabel}
+    danger={req.danger}
+    onConfirm={() => { confirmReq = null; req.onConfirm(); }}
+    onCancel={() => { confirmReq = null; }}
+  />
+{/if}
+
+{#if menu}
+  {#key menu}
+    <ContextMenu
+      x={menu.x}
+      y={menu.y}
+      items={menu.items}
+      label={menu.label}
+      onClose={() => { menu = null; }}
+    />
+  {/key}
 {/if}
 
 <LaunchToast {toast} onDismiss={() => { toast = null; }} />
