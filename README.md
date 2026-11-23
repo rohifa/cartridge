@@ -78,7 +78,7 @@ Cartridge fills in two scores, both from Steam's public store data. No API key i
 
 - **Backups:** to back up your library, copy `library.json`; **Reveal in Finder** in Settings → Local data shows it. It's written atomically, so a crash can't leave it half-written. If Cartridge can't read the file when it starts, it moves it aside as `library.corrupt-<time>.json` in the same folder and starts with an empty library, instead of overwriting it.
 - **Export:** **Export JSON** in Settings → Local data saves a copy of your library wherever you choose. Credentials are not included.
-- **Credentials:** your Steam API key and your GOG and Epic sign-in tokens are stored in the same file. They are not encrypted, so anyone who can read your user files can read them. They are never passed to the app's interface.
+- **Credentials:** your Steam API key and your GOG and Epic sign-in tokens are stored in the macOS Keychain (one item per account, named `com.cartridge.app`), not in `library.json`. Libraries from older versions are moved there on first launch. They are never passed to the app's interface. Development builds (`pnpm tauri dev`) keep them in `library.json` instead, so the Keychain doesn't ask for access after every rebuild.
 - **Network:** Cartridge connects only to Steam, GOG and Epic, to import libraries, covers and scores. Fonts and everything else in the interface ship with the app.
 
 ## Not done yet
