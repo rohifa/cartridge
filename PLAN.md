@@ -285,3 +285,14 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 - [ ] Tags stored before normalisation keep their casing; normalise them in a migration
 - [ ] Adding tags in quick succession can race (each patch sends the whole tag array)
 - [ ] Drop the legacy `last` label in a future migration, once `lastPlayedAt` is filled everywhere
+
+---
+
+## Section 18 — CI and releases ✅
+
+> Branch `ci/release`.
+
+- [x] **`.github/workflows/ci.yml`** — on pull requests and `main`: `pnpm check`, `pnpm build`, `cargo fmt --check`, `cargo clippy --all-targets -D warnings`, `cargo test` (macOS runner)
+- [x] **`.github/workflows/release.yml`** — on `v*` tags: checks the tag against the three version fields, builds `--target universal-apple-darwin` with `tauri-action` and attaches the `.dmg` to a draft release (pre-release when the tag has a suffix)
+- [x] **Signing** — ad-hoc (`bundle.macOS.signingIdentity: "-"`); Developer ID signing and notarization turn on when the Apple secrets are added
+- [x] Two `clippy::map_identity` warnings fixed in `sync.rs`

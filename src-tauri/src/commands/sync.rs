@@ -776,8 +776,7 @@ async fn epic_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, Strin
     let code = tokio::time::timeout(std::time::Duration::from_secs(300), rx)
         .await
         .map_err(|_| "Epic authentication timed out after 5 minutes".to_string())?
-        .map_err(|_| "Epic login window was closed before sign-in completed".to_string())?
-        .map_err(|e| e)?;
+        .map_err(|_| "Epic login window was closed before sign-in completed".to_string())??;
 
     let _ = window.close();
     eprintln!(
@@ -1443,8 +1442,7 @@ async fn gog_oauth_flow(state: Db<'_>, app: AppHandle) -> Result<Account, String
     let code = tokio::time::timeout(std::time::Duration::from_secs(300), rx)
         .await
         .map_err(|_| "GOG authentication timed out after 5 minutes".to_string())?
-        .map_err(|_| "GOG login window was closed before sign-in completed".to_string())?
-        .map_err(|e| e)?;
+        .map_err(|_| "GOG login window was closed before sign-in completed".to_string())??;
 
     let _ = window.close();
     eprintln!("[GOG] auth code received — exchanging for tokens");
