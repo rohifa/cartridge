@@ -69,9 +69,6 @@ pub struct GameCopy {
     pub account_id: Option<String>,
     pub installed: bool,
     pub playtime: Option<f64>,
-    /// Relative label from sync time ("3 days ago"). Kept for older builds;
-    /// the frontend prefers `last_played_at`.
-    pub last: Option<String>,
     /// Unix time (seconds) of the last session, when the platform reports it.
     #[serde(default)]
     pub last_played_at: Option<i64>,

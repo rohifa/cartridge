@@ -7,7 +7,7 @@
   import Tag from './Tag.svelte';
   import Icon from './Icon.svelte';
   import PlatIcon from './PlatIcon.svelte';
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { PLAT, STATUS_META, SCORE_SOURCES, LISTDOT } from '$lib/constants.js';
   import { fmtHours, fmtLastPlayed, fmtReviews, matchFilters, normTag, primaryCopy, totalPlaytime, TAG_MAX } from '$lib/utils.js';
   import type { Game, GameList, SteamMatchAction } from '$lib/types.js';
@@ -35,6 +35,41 @@
   } = $props();
 
   const primary = $derived(primaryCopy(game));
+
+  // ── Notes: kept locally while typing, saved after a pause ────────────────
+  const NOTE_DELAY = 500;
+  let noteDraft = $state(untrack(() => game.note));
+  let noteFor   = untrack(() => game.id);  // the game the draft belongs to
+  let noteDirty = false;
+  let noteTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function flushNote() {
+    clearTimeout(noteTimer);
+    if (!noteDirty) return;
+    noteDirty = false;
+    onPatch(noteFor, { note: noteDraft });
+  }
+
+  function editNote(text: string) {
+    noteDraft = text;
+    noteDirty = true;
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(flushNote, NOTE_DELAY);
+  }
+
+  // Another game opened: save the previous one's draft, start from the new note.
+  $effect(() => {
+    const id = game.id;
+    untrack(() => {
+      if (id === noteFor) return;
+      flushNote();
+      noteFor = id;
+      noteDraft = game.note;
+    });
+  });
+
+  // Leaving the detail view saves an unsaved draft.
+  $effect(() => () => flushNote());
 
   // ── Lists: manual ones are editable, smart ones only report a match ──────
   const manualLists  = $derived(lists.filter(l => l.kind === 'manual'));
@@ -436,8 +471,9 @@
           <textarea
             class="notes"
             placeholder="Add a private note…"
-            value={game.note}
-            oninput={(e) => onPatch(game.id, { note: (e.target as HTMLTextAreaElement).value })}
+            value={noteDraft}
+            oninput={(e) => editNote((e.target as HTMLTextAreaElement).value)}
+            onblur={flushNote}
           ></textarea>
         </section>
 

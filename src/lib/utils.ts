@@ -30,30 +30,12 @@ export function coverSrc(game: Game): string | null {
   return `/covers/${game.cover}.png`;
 }
 
-/// Days since last played, from the relative label older builds stored
-/// ("today", "yesterday", "3 days ago", "2 weeks ago", "5 months ago", "1 years ago").
-/// Unknown / never played → Infinity.
-function lastPlayedDays(last: string | null | undefined): number {
-  if (!last) return Infinity;
-  if (last === 'today') return 0;
-  if (last === 'yesterday') return 1;
-  const m = last.match(/^(\d+)\s+(day|week|month|year)s?\s+ago$/);
-  if (!m) return Infinity;
-  const n = Number(m[1]);
-  return n * ({ day: 1, week: 7, month: 30, year: 365 } as const)[m[2] as 'day' | 'week' | 'month' | 'year'];
-}
-
 const DAY = 86400;
 const nowSecs = () => Math.floor(Date.now() / 1000);
 
-/// Unix secs of the copy's last session. Falls back to an estimate from the
-/// legacy relative label (snapped to a day, so equal labels compare equal);
-/// null when never played or unknown.
+/// Unix secs of the copy's last session; null when never played or unknown.
 export function lastPlayedTs(copy: GameCopy): number | null {
-  if (copy.lastPlayedAt != null) return copy.lastPlayedAt;
-  const days = lastPlayedDays(copy.last);
-  if (!Number.isFinite(days)) return null;
-  return (Math.floor(nowSecs() / DAY) - days) * DAY;
+  return copy.lastPlayedAt ?? null;
 }
 
 /// Most recent session across all copies of a game.
@@ -68,10 +50,7 @@ export function gameLastPlayed(game: Game): number | null {
 
 /// Relative label for the copy's last session, computed now.
 export function fmtLastPlayed(copy: GameCopy): string | null {
-  if (copy.lastPlayedAt == null) {
-    // Legacy label only: show it as stored, minus the old "1 years ago" plural.
-    return copy.last?.replace(/^1 (day|week|month|year)s ago$/, '1 $1 ago') ?? null;
-  }
+  if (copy.lastPlayedAt == null) return null;
   const days = Math.max(0, Math.floor((nowSecs() - copy.lastPlayedAt) / DAY));
   if (days === 0) return 'today';
   if (days === 1) return 'yesterday';

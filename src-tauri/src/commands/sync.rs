@@ -83,7 +83,6 @@ fn absorb_game(primary: &mut Game, other: Game) {
             Some(p) => {
                 if c.last_played_at > p.last_played_at {
                     p.last_played_at = c.last_played_at;
-                    p.last = c.last;
                 }
             }
             None => primary.copies.push(c),
@@ -211,20 +210,6 @@ fn merge_duplicate_games(data: &mut crate::models::CartridgeData) -> u32 {
     }
 
     to_remove.len() as u32
-}
-
-fn relative_time(unix: u64) -> String {
-    use chrono::{DateTime, Utc};
-    let dt = DateTime::<Utc>::from_timestamp(unix as i64, 0).unwrap_or_else(Utc::now);
-    let days = Utc::now().signed_duration_since(dt).num_days();
-    match days {
-        0 => "today".into(),
-        1 => "yesterday".into(),
-        2..=6 => format!("{days} days ago"),
-        7..=27 => format!("{} weeks ago", days / 7),
-        28..=364 => format!("{} months ago", days / 30),
-        _ => format!("{} years ago", days / 365),
-    }
 }
 
 async fn download_cover(
@@ -435,9 +420,7 @@ async fn sync_steam(
         for sg in &steam_games {
             let app_id_str = sg.appid.to_string();
             let playtime = sg.playtime_forever.map(|m| m as f64 / 60.0);
-            let last_played_at = sg.rtime_last_played.filter(|&t| t > 0);
-            let last = last_played_at.map(relative_time);
-            let last_played_at = last_played_at.map(|t| t as i64);
+            let last_played_at = sg.rtime_last_played.filter(|&t| t > 0).map(|t| t as i64);
             let installed = playtime.map(|h| h > 0.0).unwrap_or(false);
 
             // First pass: look for existing game with this Steam app_id in any copy
@@ -455,7 +438,6 @@ async fn sync_steam(
                     .find(|c| c.platform == Platform::Steam && c.app_id == app_id_str)
                 {
                     copy.playtime = playtime;
-                    copy.last = last.clone();
                     copy.last_played_at = last_played_at;
                     copy.installed = installed;
                 }
@@ -477,7 +459,6 @@ async fn sync_steam(
                         account_id: Some(account_id.clone()),
                         installed,
                         playtime,
-                        last: last.clone(),
                         last_played_at,
                     });
                     updated += 1;
@@ -512,7 +493,6 @@ async fn sync_steam(
                             account_id: Some(account_id.clone()),
                             installed,
                             playtime,
-                            last: last.clone(),
                             last_played_at,
                         }],
                     });
@@ -1101,7 +1081,6 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
                         account_id: Some(account_id.clone()),
                         installed: false,
                         playtime: None,
-                        last: None,
                         last_played_at: None,
                     });
                     if game.year == 0 && year > 0 {
@@ -1141,7 +1120,6 @@ async fn sync_epic(state: Db<'_>, account_id: String) -> Result<SyncResult, Stri
                             account_id: Some(account_id.clone()),
                             installed: false,
                             playtime: None,
-                            last: None,
                             last_played_at: None,
                         }],
                     });
@@ -1704,7 +1682,6 @@ async fn sync_gog(state: Db<'_>, account_id: String) -> Result<SyncResult, Strin
                         account_id: Some(account_id.clone()),
                         installed: false,
                         playtime: None,
-                        last: None,
                         last_played_at: None,
                     });
                     // Update game-level metadata if missing
@@ -1743,7 +1720,6 @@ async fn sync_gog(state: Db<'_>, account_id: String) -> Result<SyncResult, Strin
                             account_id: Some(account_id.clone()),
                             installed: false,
                             playtime: None,
-                            last: None,
                             last_played_at: None,
                         }],
                     });
@@ -1855,7 +1831,6 @@ mod tests {
                 account_id: None,
                 installed: false,
                 playtime: None,
-                last: None,
                 last_played_at: None,
             }],
         }
@@ -1946,25 +1921,22 @@ mod tests {
         a.copies[0].last_played_at = Some(100);
         let mut b = game(2, "Hades", Platform::Steam, "1145360");
         b.copies[0].last_played_at = Some(200);
-        b.copies[0].last = Some("today".into());
         let mut d = data(vec![a, b], vec![]);
 
         assert_eq!(merge_duplicate_games(&mut d), 1);
         let copies = &d.games[0].copies;
         assert_eq!(copies.len(), 1);
         assert_eq!(copies[0].last_played_at, Some(200));
-        assert_eq!(copies[0].last.as_deref(), Some("today"));
     }
 
     #[test]
     fn copy_without_last_played_at_deserializes() {
         let c: GameCopy = serde_json::from_value(serde_json::json!({
             "platform": "steam", "appId": "620", "installed": true,
-            "playtime": 12.5, "last": "3 days ago",
+            "playtime": 12.5,
         }))
         .unwrap();
         assert_eq!(c.last_played_at, None);
-        assert_eq!(c.last.as_deref(), Some("3 days ago"));
         let v = serde_json::to_value(&c).unwrap();
         assert!(v.get("lastPlayedAt").is_some());
     }

@@ -67,7 +67,6 @@ mod tests {
             account_id: None,
             installed,
             playtime: None,
-            last: None,
             last_played_at,
         }
     }

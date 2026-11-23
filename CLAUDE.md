@@ -122,9 +122,11 @@ const result = await invoke("greet", { name: "World" });
 
 ### Library file
 
-- **Loading**: `AppStore::load` reads `library.json` through `read_library` → `parse_library` in `store.rs`, which also runs the version migrations (`migrate_v0_to_v1`). A file that can't be read, parsed or migrated is renamed to `library.corrupt-<unix secs>.json` before falling back to empty data, so the next save never overwrites it. Add new migrations in `parse_library`.
+- **Loading**: `AppStore::load` reads `library.json` through `read_library` → `parse_library` in `store.rs`, which also runs the version migrations (`migrate_v0_to_v1`, `migrate_v1_to_v2`; current format: `CURRENT_VERSION` = 2). Before a migrated library is saved, the original is copied to `library.v<old>.json`. A file that can't be read, parsed or migrated, or was written by a newer version, is renamed to `library.corrupt-<unix secs>.json` before falling back to empty data, so the next save never overwrites it. Add new migrations in `parse_library` and bump `CURRENT_VERSION`.
 - **Credentials**: `api_key` and OAuth tokens live in the same file. Anything sent to the frontend or exported goes through `sanitized_data()`.
-- **Last played**: `GameCopy.lastPlayedAt` (unix secs) is the source of truth; the relative label is computed at render time (`fmtLastPlayed()` in `utils.ts`). `last` is a legacy label kept so older libraries still sort and display (estimated from the text); don't write new logic against it.
+- **Last played**: `GameCopy.lastPlayedAt` (unix secs) is the only last-played field; the relative label is computed at render time (`fmtLastPlayed()` in `utils.ts`). The v2 migration turned the old `last` labels into estimated timestamps and removed them.
+- **Tags**: always normalised (`normTag()` in `utils.ts`, `norm_tag()` / `clean_tags()` in `store.rs`, same rules); `patch_game` normalises and deduplicates them.
+- **Edits**: `patch()` in `+page.svelte` updates the UI at once and sends patches one at a time per game; server copies of a game with unanswered patches get those fields laid on top (`withPending`). Notes are saved 500 ms after typing stops, on blur, and when leaving the game.
 
 ## Scores
 
