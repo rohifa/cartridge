@@ -123,7 +123,7 @@ const result = await invoke("greet", { name: "World" });
 ### Library file
 
 - **Loading**: `AppStore::load` reads `library.json` through `read_library` → `parse_library` in `store.rs`, which also runs the version migrations (`migrate_v0_to_v1`, `migrate_v1_to_v2`; current format: `CURRENT_VERSION` = 2). Before a migrated library is saved, the original is copied to `library.v<old>.json`. A file that can't be read, parsed or migrated, or was written by a newer version, is renamed to `library.corrupt-<unix secs>.json` before falling back to empty data, so the next save never overwrites it. Add new migrations in `parse_library` and bump `CURRENT_VERSION`.
-- **Credentials**: `api_key` and OAuth tokens live in the same file. Anything sent to the frontend or exported goes through `sanitized_data()`.
+- **Credentials**: `api_key`, OAuth tokens and the Epic session stay on `Account` in memory; `secrets.rs` decides where they go on disk. Release builds keep them in the macOS Keychain (`Keychain`, through the `keyring` crate): `AppStore::save` writes changed ones there and leaves them out of `library.json` (except when the Keychain write fails), and deletes entries of removed accounts. Debug builds keep them in `library.json` and only read the Keychain for accounts that have none in the file. Tests use `FakeVault`. Anything sent to the frontend or exported goes through `sanitized_data()`.
 - **Last played**: `GameCopy.lastPlayedAt` (unix secs) is the only last-played field; the relative label is computed at render time (`fmtLastPlayed()` in `utils.ts`). The v2 migration turned the old `last` labels into estimated timestamps and removed them.
 - **Tags**: always normalised (`normTag()` in `utils.ts`, `norm_tag()` / `clean_tags()` in `store.rs`, same rules); `patch_game` normalises and deduplicates them.
 - **Edits**: `patch()` in `+page.svelte` updates the UI at once and sends patches one at a time per game; server copies of a game with unanswered patches get those fields laid on top (`withPending`). Notes are saved 500 ms after typing stops, on blur, and when leaving the game.
@@ -269,6 +269,6 @@ To add more plugins:
 ## Important Notes
 
 - **Local-First**: All data stored on user's machine, no cloud sync
-- **Security**: Tauri's CSP is currently `null` in config — consider tightening for production
+- **Security**: the CSP in `tauri.conf.json` allows only the app's own scripts, styles, fonts and images, plus `asset:` (cover art) and IPC. `style-src` keeps `'unsafe-inline'` because Svelte renders `style=` attributes; `dangerousDisableAssetCspModification: ["style-src"]` stops Tauri adding hashes there, which would disable `'unsafe-inline'`. `devCsp` also allows inline scripts and the Vite HMR socket. The GOG/Epic sign-in windows load external pages and aren't covered by it.
 - **Platform**: Primary target is macOS (may need updates for Windows/Linux)
 - **Build Output**: Rust target directory (`src-tauri/target/`) is large; excluded from git
