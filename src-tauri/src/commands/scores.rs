@@ -31,6 +31,8 @@ const MAX_BACKOFFS: u32 = 3;
 const SAVE_EVERY: u32 = 10;
 /// Frontend event carrying `Vec<Game>` (full, updated entries).
 const EVENT: &str = "games-updated";
+/// Frontend event carrying `ScoreProgress` (the whole state, on every change).
+const PROGRESS_EVENT: &str = "scores-progress";
 
 /// Steam app IDs to take scores from: owned Steam copies first, then the
 /// title match (only ever set for games with no Steam copy).
@@ -53,8 +55,10 @@ fn has_steam_copy(g: &Game) -> bool {
     g.copies.iter().any(|c| c.platform == Platform::Steam)
 }
 
-fn due(checked_at: Option<i64>, now: i64) -> bool {
-    checked_at.is_none_or(|t| now - t >= RECHECK_SECS)
+/// Due for a (re)check: never checked, checked long enough ago, or forced
+/// ("Refresh scores").
+fn due(checked_at: Option<i64>, now: i64, force: bool) -> bool {
+    force || checked_at.is_none_or(|t| now - t >= RECHECK_SECS)
 }
 
 // ───────────────────────────── HTTP helpers ─────────────────────────────
@@ -374,15 +378,22 @@ async fn search_steam(client: &reqwest::Client, term: &str) -> Result<Vec<Candid
         .collect())
 }
 
-fn match_due(g: &Game, now: i64) -> bool {
+/// Forcing searches again only for games still unmatched; matches and the
+/// user's own decisions are kept.
+fn match_due(g: &Game, now: i64, force: bool) -> bool {
     !has_steam_copy(g)
         && !g.steam_match_manual
         && g.steam_match.is_none()
-        && (g.steam_match_rev < MATCHER_REV || due(g.steam_match_checked_at, now))
+        && (g.steam_match_rev < MATCHER_REV || due(g.steam_match_checked_at, now, force))
 }
 
 /// Match GOG/Epic-only games to Steam apps. Returns how many got a match.
-async fn match_titles(app: &AppHandle, client: &reqwest::Client, now: i64) -> anyhow::Result<u32> {
+async fn match_titles(
+    app: &AppHandle,
+    client: &reqwest::Client,
+    now: i64,
+    force: bool,
+) -> anyhow::Result<u32> {
     let state = app.state::<Mutex<AppStore>>();
     let todo: Vec<(u64, String, u32)> = {
         let store = state.lock().unwrap();
@@ -390,7 +401,7 @@ async fn match_titles(app: &AppHandle, client: &reqwest::Client, now: i64) -> an
             .data
             .games
             .iter()
-            .filter(|g| match_due(g, now))
+            .filter(|g| match_due(g, now, force))
             .map(|g| (g.id, g.title.clone(), g.year))
             .collect()
     };
@@ -398,9 +409,11 @@ async fn match_titles(app: &AppHandle, client: &reqwest::Client, now: i64) -> an
         return Ok(0);
     }
     eprintln!("[Scores] matching {} titles on Steam", todo.len());
+    start_phase(app, ScorePhase::Matching, todo.len());
 
     let (mut matched, mut unsaved) = (0u32, 0u32);
     for (id, title, year) in todo {
+        step(app);
         let term = strip_edition(&title);
         let candidates = match paced(SEARCH_DELAY, || search_steam(client, &term)).await {
             Ok(c) => c,
@@ -669,6 +682,7 @@ async fn refresh_metacritic(
     app: &AppHandle,
     client: &reqwest::Client,
     now: i64,
+    force: bool,
 ) -> anyhow::Result<u32> {
     let state = app.state::<Mutex<AppStore>>();
 
@@ -680,7 +694,7 @@ async fn refresh_metacritic(
             .data
             .games
             .iter()
-            .filter(|g| due(g.metacritic_checked_at, now))
+            .filter(|g| due(g.metacritic_checked_at, now, force))
             .map(steam_appids)
             .filter(|ids| !ids.is_empty())
             .collect()
@@ -689,9 +703,11 @@ async fn refresh_metacritic(
         return Ok(0);
     }
     eprintln!("[Scores] Metacritic: checking {} games", todo.len());
+    start_phase(app, ScorePhase::Metacritic, todo.len());
 
     let (mut checked, mut unsaved) = (0u32, 0u32);
     for appids in todo {
+        step(app);
         // Try each Steam app until one has a Metascore.
         let mut found = None;
         let mut complete = true;
@@ -883,6 +899,78 @@ static RUNNING: AtomicBool = AtomicBool::new(false);
 /// Set when a refresh is requested while one runs; the job then goes again,
 /// so games added by a sync mid-run aren't left until the next launch.
 static PENDING: AtomicBool = AtomicBool::new(false);
+/// Set by "Refresh scores": the next pass rechecks everything, ignoring the
+/// `*_checked_at` windows.
+static FORCE: AtomicBool = AtomicBool::new(false);
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScorePhase {
+    Matching,
+    Reviews,
+    Metacritic,
+}
+
+/// What the background job is doing, for Settings and the sidebar.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScoreProgress {
+    pub running: bool,
+    /// None between phases and when idle.
+    pub phase: Option<ScorePhase>,
+    /// Items started in the current phase, out of `total`.
+    pub done: u32,
+    pub total: u32,
+    /// Unix secs when the last pass finished; None if none has since launch.
+    pub finished_at: Option<i64>,
+    /// Plain-language problem from the last pass (rate limit, network).
+    pub error: Option<String>,
+    /// "Refresh scores" was asked for and its pass hasn't started yet.
+    pub refresh_queued: bool,
+}
+
+static PROGRESS: Mutex<ScoreProgress> = Mutex::new(ScoreProgress {
+    running: false,
+    phase: None,
+    done: 0,
+    total: 0,
+    finished_at: None,
+    error: None,
+    refresh_queued: false,
+});
+
+fn snapshot() -> ScoreProgress {
+    let mut p = PROGRESS.lock().unwrap().clone();
+    p.refresh_queued = FORCE.load(Ordering::SeqCst);
+    p
+}
+
+/// Updates the shared progress and pushes the new state to the frontend.
+fn report(app: &AppHandle, f: impl FnOnce(&mut ScoreProgress)) {
+    f(&mut PROGRESS.lock().unwrap());
+    app.emit(PROGRESS_EVENT, snapshot()).ok();
+}
+
+fn start_phase(app: &AppHandle, phase: ScorePhase, total: usize) {
+    report(app, |p| {
+        p.phase = Some(phase);
+        p.done = 0;
+        p.total = total as u32;
+    });
+}
+
+fn step(app: &AppHandle) {
+    report(app, |p| p.done = (p.done + 1).min(p.total));
+}
+
+/// A phase error in words the UI can show.
+fn describe(e: &anyhow::Error) -> String {
+    if format!("{e:#}").contains("rate limited") {
+        "Steam is limiting requests. The rest is checked on the next run.".into()
+    } else {
+        "Some scores couldn't be fetched. They're retried on the next run.".into()
+    }
+}
 
 struct RunningGuard;
 impl Drop for RunningGuard {
@@ -899,13 +987,26 @@ pub(crate) fn spawn_score_refresh(app: AppHandle) {
     }
     tauri::async_runtime::spawn(async move {
         let _guard = RunningGuard;
+        report(&app, |p| {
+            p.running = true;
+            p.phase = None;
+            p.error = None;
+        });
         loop {
             PENDING.store(false, Ordering::SeqCst);
-            refresh_all(&app).await;
+            let error = refresh_all(&app).await;
+            report(&app, |p| {
+                p.phase = None;
+                p.error = error;
+            });
             if !PENDING.load(Ordering::SeqCst) {
                 break;
             }
         }
+        report(&app, |p| {
+            p.running = false;
+            p.finished_at = Some(chrono::Utc::now().timestamp());
+        });
     });
 }
 
@@ -915,35 +1016,71 @@ pub fn start_score_refresh(app: AppHandle) {
     spawn_score_refresh(app);
 }
 
+/// "Refresh scores": recheck every game now, whatever was checked recently.
+/// Queued as the next pass if one is running.
+#[tauri::command]
+pub fn refresh_scores(app: AppHandle) {
+    FORCE.store(true, Ordering::SeqCst);
+    report(&app, |_| {});
+    spawn_score_refresh(app);
+}
+
+/// Current state of the background job (the frontend may mount mid-run).
+#[tauri::command]
+pub fn get_score_progress() -> ScoreProgress {
+    snapshot()
+}
+
 /// One pass of all three phases. A failing phase is logged and the next one
 /// still runs; whatever didn't finish is picked up by the next pass.
-async fn refresh_all(app: &AppHandle) {
+/// Returns the first problem, described for the UI.
+async fn refresh_all(app: &AppHandle) -> Option<String> {
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(20))
         .build()
     {
         Ok(c) => c,
-        Err(e) => return eprintln!("[Scores] client: {e}"),
+        Err(e) => {
+            eprintln!("[Scores] client: {e}");
+            return Some(describe(&e.into()));
+        }
     };
     let now = chrono::Utc::now().timestamp();
+    let force = FORCE.swap(false, Ordering::SeqCst);
+    if force {
+        eprintln!("[Scores] refresh requested: rechecking everything");
+    }
+    let mut error = None;
 
-    match match_titles(app, &client, now).await {
+    match match_titles(app, &client, now, force).await {
         Ok(n) if n > 0 => eprintln!("[Scores] matched {n} titles"),
         Ok(_) => {}
-        Err(e) => eprintln!("[Scores] {e:#}"),
+        Err(e) => {
+            eprintln!("[Scores] {e:#}");
+            error.get_or_insert(describe(&e));
+        }
     }
+    start_phase(app, ScorePhase::Reviews, 1);
     match refresh_steam_reviews(app.state::<Mutex<AppStore>>().inner(), &client).await {
         Ok(games) if !games.is_empty() => {
             app.emit(EVENT, games).ok();
         }
         Ok(_) => {}
-        Err(e) => eprintln!("[Scores] user reviews: {e:#}"),
+        Err(e) => {
+            eprintln!("[Scores] user reviews: {e:#}");
+            error.get_or_insert(describe(&e));
+        }
     }
-    match refresh_metacritic(app, &client, now).await {
+    step(app);
+    match refresh_metacritic(app, &client, now, force).await {
         Ok(n) if n > 0 => eprintln!("[Scores] Metacritic: {n} games checked"),
         Ok(_) => {}
-        Err(e) => eprintln!("[Scores] {e:#}"),
+        Err(e) => {
+            eprintln!("[Scores] {e:#}");
+            error.get_or_insert(describe(&e));
+        }
     }
+    error
 }
 
 #[cfg(test)]
@@ -1255,12 +1392,55 @@ mod tests {
         let mut g = game(&[(Platform::Gog, "1")]);
         g.steam_match_checked_at = Some(1_000);
         g.steam_match_rev = MATCHER_REV - 1;
-        assert!(match_due(&g, 1_001));
+        assert!(match_due(&g, 1_001, false));
         g.steam_match_rev = MATCHER_REV;
-        assert!(!match_due(&g, 1_001));
+        assert!(!match_due(&g, 1_001, false));
         g.steam_match_rev = 0;
         g.steam_match_manual = true; // "Not this game" stays rejected
-        assert!(!match_due(&g, 1_001));
+        assert!(!match_due(&g, 1_001, false));
+    }
+
+    #[test]
+    fn forced_matching_skips_matched_and_manual_games() {
+        let mut g = game(&[(Platform::Gog, "1")]);
+        g.steam_match_checked_at = Some(1_000);
+        g.steam_match_rev = MATCHER_REV;
+        assert!(!match_due(&g, 1_001, false));
+        assert!(match_due(&g, 1_001, true), "unmatched: searched again");
+
+        let mut manual = g.clone();
+        manual.steam_match_manual = true;
+        assert!(!match_due(&manual, 1_001, true), "user decision kept");
+
+        let mut matched = g.clone();
+        matched.steam_match = Some(SteamMatch {
+            appid: 620,
+            name: "Portal 2".into(),
+        });
+        assert!(!match_due(&matched, 1_001, true), "existing match kept");
+
+        let owned = game(&[(Platform::Steam, "620")]);
+        assert!(!match_due(&owned, 1_001, true), "owned on Steam: no search");
+    }
+
+    #[test]
+    fn progress_serialises_for_the_frontend() {
+        let p = ScoreProgress {
+            running: true,
+            phase: Some(ScorePhase::Metacritic),
+            done: 3,
+            total: 10,
+            finished_at: None,
+            error: None,
+            refresh_queued: false,
+        };
+        assert_eq!(
+            serde_json::to_value(&p).unwrap(),
+            serde_json::json!({
+                "running": true, "phase": "metacritic", "done": 3, "total": 10,
+                "finishedAt": null, "error": null, "refreshQueued": false,
+            })
+        );
     }
 
     #[test]
@@ -1415,9 +1595,11 @@ mod tests {
 
     #[test]
     fn recheck_window() {
-        assert!(due(None, 1_000));
-        assert!(!due(Some(1_000), 1_000 + RECHECK_SECS - 1));
-        assert!(due(Some(1_000), 1_000 + RECHECK_SECS));
+        assert!(due(None, 1_000, false));
+        assert!(!due(Some(1_000), 1_000 + RECHECK_SECS - 1, false));
+        assert!(due(Some(1_000), 1_000 + RECHECK_SECS, false));
+        // "Refresh scores" ignores the window.
+        assert!(due(Some(1_000), 1_001, true));
     }
 
     // ── live (real Steam API): `cargo test -- --ignored live_` ──

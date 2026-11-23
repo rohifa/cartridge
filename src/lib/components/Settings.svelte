@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
   import PlatIcon from './PlatIcon.svelte';
-  import type { Account, CartridgeData, Prefs } from '$lib/types.js';
+  import type { Account, CartridgeData, Prefs, ScoreProgress, ScorePhase } from '$lib/types.js';
 
   let {
     data,
@@ -10,6 +10,8 @@
     theme,
     libraryPath,
     exporting,
+    scoreProgress,
+    onRefreshScores,
     onSync,
     onSetPref,
     onTheme,
@@ -27,6 +29,8 @@
     /// Display path of library.json, home abbreviated to `~`; empty until loaded.
     libraryPath: string;
     exporting: boolean;
+    scoreProgress: ScoreProgress | null;
+    onRefreshScores: () => void;
     onSync: (id: string) => void;
     onSetPref: <K extends keyof Prefs>(key: K, val: Prefs[K]) => void;
     onTheme: (t: 'dark' | 'light') => void;
@@ -37,6 +41,30 @@
     onReveal: () => void;
     onExport: () => void;
   } = $props();
+
+  const PHASE_LABEL: Record<ScorePhase, string> = {
+    matching:   'Matching GOG and Epic titles on Steam',
+    reviews:    'Fetching Steam reviews',
+    metacritic: 'Checking Metacritic',
+  };
+  const num = (n: number) => n.toLocaleString('en-US');
+
+  const scoreStatus = $derived.by(() => {
+    const p = scoreProgress;
+    if (!p) return '…';
+    if (p.running && p.phase) {
+      return p.total > 1 ? `${PHASE_LABEL[p.phase]} · ${num(p.done)} / ${num(p.total)}` : PHASE_LABEL[p.phase];
+    }
+    if (p.running) return 'Starting…';
+    if (p.error) return p.error;
+    if (p.finishedAt) return 'Up to date';
+    return 'Not checked since Cartridge opened';
+  });
+  const scoreFraction = $derived(
+    scoreProgress?.running && scoreProgress.phase && scoreProgress.total > 1
+      ? scoreProgress.done / scoreProgress.total
+      : null
+  );
 </script>
 
 <div class="settings">
@@ -230,6 +258,34 @@
             aria-label="Auto-sync on open"
           >
             <span class="toggle-thumb"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scores -->
+    <div class="pref-section">
+      <div class="pref-section-title">Scores</div>
+      <div class="pref-card">
+        <div class="pref-row last">
+          <div class="pref-text">
+            <div class="pref-label">Steam reviews and Metacritic</div>
+            <div class="pref-desc">
+              Updated in the background when Cartridge opens and after each sync. Refreshing
+              rechecks every game; Steam allows about one Metacritic lookup every 1.6 s, so it
+              takes around 25 minutes per 1,000 games.
+            </div>
+            <div class="score-status" class:score-error={!scoreProgress?.running && scoreProgress?.error}>
+              {scoreStatus}
+            </div>
+            {#if scoreFraction != null}
+              <div class="score-bar" role="progressbar" aria-valuemin={0} aria-valuemax={scoreProgress?.total} aria-valuenow={scoreProgress?.done}>
+                <div class="score-bar-fill" style="width:{(scoreFraction * 100).toFixed(1)}%"></div>
+              </div>
+            {/if}
+          </div>
+          <button class="action-btn" disabled={!scoreProgress || scoreProgress.refreshQueued} onclick={onRefreshScores}>
+            {scoreProgress?.refreshQueued ? 'Refresh queued' : 'Refresh scores'}
           </button>
         </div>
       </div>
@@ -552,6 +608,32 @@
     color: var(--fg-3);
     margin-top: 2px;
     line-height: 1.45;
+  }
+
+  .score-status {
+    margin-top: 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-2);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .score-status.score-error {
+    color: var(--warn);
+  }
+
+  .score-bar {
+    margin-top: 6px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--bg-3);
+    overflow: hidden;
+  }
+
+  .score-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s ease;
   }
 
   .file-path {

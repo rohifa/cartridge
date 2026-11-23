@@ -35,6 +35,8 @@ pub fn run() {
             commands::sync::sync_account,
             commands::sync::remove_account,
             commands::scores::start_score_refresh,
+            commands::scores::refresh_scores,
+            commands::scores::get_score_progress,
             commands::scores::set_steam_match,
             commands::scores::reject_steam_match,
             commands::scores::auto_steam_match,

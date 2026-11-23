@@ -2,7 +2,7 @@
   import { LISTDOT } from '$lib/constants.js';
   import Icon from './Icon.svelte';
   import PlatIcon from './PlatIcon.svelte';
-  import type { CartridgeData, SidebarFilter, AppView, GameList, Platform } from '$lib/types.js';
+  import type { CartridgeData, SidebarFilter, AppView, GameList, Platform, ScoreProgress } from '$lib/types.js';
   import { totalPlaytime } from '$lib/utils.js';
 
   let {
@@ -10,6 +10,7 @@
     view,
     filter,
     listCount,
+    scoreProgress = null,
     onNavigate,
     onFilter,
     onCreateList,
@@ -19,6 +20,7 @@
     view: AppView;
     filter: SidebarFilter;
     listCount: (list: GameList) => number;
+    scoreProgress?: ScoreProgress | null;
     onNavigate: (v: AppView) => void;
     onFilter: (f: SidebarFilter) => void;
     onCreateList: () => void;
@@ -134,6 +136,15 @@
   <!-- Settings footer -->
   <div class="footer">
     {@render navItem({ icon: 'settings', label: 'Settings & sync', active: view === 'settings', onClick: () => onNavigate('settings') })}
+    {#if scoreProgress?.running}
+      <div class="scores-status" title="Scores are being updated in the background">
+        <span class="spin"><Icon name="loader" size={11} /></span>
+        <span>Updating scores</span>
+        {#if scoreProgress.total > 1}
+          <span class="scores-count">{scoreProgress.done.toLocaleString('en-US')} / {scoreProgress.total.toLocaleString('en-US')}</span>
+        {/if}
+      </div>
+    {/if}
   </div>
 </aside>
 
@@ -251,5 +262,25 @@
   .footer {
     border-top: 1px solid var(--border-1);
     padding: 7px 0 9px;
+  }
+
+  .scores-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 2px 17px 0;
+    font-size: 11px;
+    color: var(--fg-3);
+  }
+
+  .scores-count {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .spin {
+    display: inline-flex;
+    animation: crt-spin 1s linear infinite;
   }
 </style>

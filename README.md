@@ -67,7 +67,7 @@ Cartridge fills in two scores, both from Steam's public store data. No API key i
 
 **Games no longer sold on Steam** don't appear in Steam's search. Their reviews are still available, so pasting the Steam link works for them too.
 
-**Refreshing** happens in the background, when the app starts and after every sync. Steam allows only about one Metacritic lookup every 1.6 seconds, so the first pass over a large library takes a while: around 25 minutes for 1,000 games. Scores appear as they arrive, and an interrupted pass resumes next time. Each game is rechecked every 30 days.
+**Refreshing** happens in the background, when the app starts and after every sync. Steam allows only about one Metacritic lookup every 1.6 seconds, so the first pass over a large library takes a while: around 25 minutes for 1,000 games. Scores appear as they arrive, and an interrupted pass resumes next time. Each game is rechecked every 30 days. **Settings → Scores** shows what the refresh is doing, and **Refresh scores** rechecks every game right away.
 
 ## Your data
 
@@ -83,7 +83,6 @@ Cartridge fills in two scores, both from Steam's public store data. No API key i
 
 ## Not done yet
 
-- **Score refresh progress:** there's no progress indicator for the background score refresh; it's only visible in the `pnpm tauri dev` console as `[Scores]` lines.
 - **Platforms:** Windows and Linux builds are untested.
 
 ## Development

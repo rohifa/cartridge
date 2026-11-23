@@ -252,8 +252,8 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 - [x] **Background job** on app start and after every sync; `games-updated` event updates the UI as results arrive
 - [x] **Game detail**: shows where Steam scores come from; "Not this game", paste a Steam link / app ID, "Match automatically"
 - [x] **UI**: badges with a `%` unit; "User score" renamed "Steam reviews"; OpenCritic removed from all views (fields kept in the model, no source)
-- [ ] Progress indicator for the background job (today only `[Scores]` log lines)
-- [ ] "Refresh scores" action in Settings that rechecks everything immediately
+- [x] Progress indicator for the background job: `ScoreProgress` (phase, done / total, last error) pushed as `scores-progress` and read with `get_score_progress`; shown in Settings → Scores and as "Updating scores" in the sidebar footer
+- [x] "Refresh scores" action in Settings that rechecks everything immediately (`refresh_scores`: the next pass ignores the `*_checked_at` windows; matches and manual decisions are kept; queued if a pass is running)
 
 ---
 

@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Account, CartridgeData, Game, GameList, Prefs } from './types.js';
-import type { GamePatch, SyncResult } from './types.js';
+import type { GamePatch, ScoreProgress, SyncResult } from './types.js';
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
@@ -36,6 +36,8 @@ export const removeAccount    = (accountId: string)              => invoke<void>
 /// Starts the paced background score refresh (title matching, Steam reviews,
 /// Metacritic); results arrive as `games-updated` events.
 export const startScoreRefresh = () => invoke<void>('start_score_refresh');
+export const refreshScores     = () => invoke<void>('refresh_scores');
+export const getScoreProgress  = () => invoke<ScoreProgress>('get_score_progress');
 export const setSteamMatch     = (gameId: number, input: string) => invoke<Game>('set_steam_match', { gameId, input });
 export const rejectSteamMatch  = (gameId: number)                => invoke<Game>('reject_steam_match', { gameId });
 export const autoSteamMatch    = (gameId: number)                => invoke<Game>('auto_steam_match', { gameId });
