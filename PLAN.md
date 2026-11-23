@@ -281,7 +281,19 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 
 ### Later
 
-- [ ] Notes are saved on every keystroke; debounce the `patch_game` call
-- [ ] Tags stored before normalisation keep their casing; normalise them in a migration
-- [ ] Adding tags in quick succession can race (each patch sends the whole tag array)
-- [ ] Drop the legacy `last` label in a future migration, once `lastPlayedAt` is filled everywhere
+- [x] Notes are saved on every keystroke; debounce the `patch_game` call (Section 16)
+- [x] Tags stored before normalisation keep their casing; normalise them in a migration (Section 16)
+- [x] Adding tags in quick succession can race (each patch sends the whole tag array) (Section 16)
+- [x] Drop the legacy `last` label in a future migration, once `lastPlayedAt` is filled everywhere (Section 16)
+
+---
+
+## Section 16 — Safe edits and library v2 ✅
+
+> Branch `fix/edits-and-migration`.
+
+- [x] **Library v2 migration** (`store.rs`): `parse_library` runs `migrate_v0_to_v1` → `migrate_v1_to_v2` on the JSON value, then deserialises once. v2 normalises and deduplicates tags, and turns each copy's legacy `last` label into an estimated `lastPlayedAt` (when it has none) before removing it. The original file is kept as `library.v<old>.json`; a library from a newer version is moved aside like an unreadable one (unit tests)
+- [x] **`last` removed** from `GameCopy` (Rust and TS), from Steam sync and from `utils.ts`
+- [x] **Tags normalised in Rust** too: `norm_tag()` / `clean_tags()` mirror `normTag()`; `patch_game` applies them
+- [x] **Optimistic, ordered edits**: `patch()` in `+page.svelte` applies fields at once, queues `patch_game` calls per game, and lays unanswered fields over server copies (`withPending`), so quick successive tag edits no longer drop each other
+- [x] **Notes debounced**: `GameDetail` keeps a draft and saves 500 ms after typing stops, on blur, on switching game and on leaving the view

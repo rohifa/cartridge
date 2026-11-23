@@ -982,7 +982,6 @@ mod tests {
                     account_id: None,
                     installed: false,
                     playtime: None,
-                    last: None,
                     last_played_at: None,
                 })
                 .collect(),

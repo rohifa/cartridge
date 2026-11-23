@@ -7,7 +7,6 @@ export interface GameCopy {
   accountId?: string;
   installed: boolean;
   playtime: number | null;
-  last: string | null;           // legacy relative label from sync time ("3 days ago")
   lastPlayedAt?: number | null;  // unix secs of the last session
 }
 

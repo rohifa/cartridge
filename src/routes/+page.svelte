@@ -100,7 +100,7 @@
   // Background score refreshes in Rust push single-game updates.
   onMount(() => {
     const unlisten = listen<Game[]>('games-updated', (e) => {
-      const byId = new Map(e.payload.map(g => [g.id, g]));
+      const byId = new Map(e.payload.map(g => [g.id, withPending(g)]));
       games = games.map(g => byId.get(g.id) ?? g);
     });
     return () => { unlisten.then(f => f()); };
@@ -245,9 +245,44 @@
   });
 
   // ── Handlers — all mutations go through Rust ──────────────────────────────
-  async function patch(id: number, fields: GamePatch) {
-    const updated = await apiPatchGame(id, fields);
-    games = games.map(g => g.id === id ? updated : g);
+  // Edits show at once and are sent one at a time per game, in order. Until
+  // the last one is answered, server copies of that game (patch answers,
+  // `games-updated`) get the unanswered fields laid on top, so a quick second
+  // edit (another tag) never builds on a stale copy.
+  const pendingPatches = new Map<number, { count: number; fields: GamePatch; queue: Promise<unknown> }>();
+
+  function withPending(g: Game): Game {
+    const p = pendingPatches.get(g.id);
+    return p ? { ...g, ...p.fields } : g;
+  }
+
+  function patch(id: number, fields: GamePatch): Promise<void> {
+    games = games.map(g => g.id === id ? { ...g, ...fields } : g);
+
+    const p = pendingPatches.get(id) ?? { count: 0, fields: {}, queue: Promise.resolve() };
+    p.count += 1;
+    p.fields = { ...p.fields, ...fields };
+    pendingPatches.set(id, p);
+
+    const run = p.queue.then(async () => {
+      let server: Game | null = null;
+      try {
+        server = await apiPatchGame(id, fields);
+      } catch (e) {
+        console.error('patch_game failed', e);
+      }
+      p.count -= 1;
+      if (p.count === 0) pendingPatches.delete(id);
+      if (server) {
+        games = games.map(g => g.id === id ? withPending(server!) : g);
+      } else if (p.count === 0) {
+        // Show what was actually saved.
+        const saved = (await loadData().catch(() => null))?.games.find(g => g.id === id);
+        if (saved) games = games.map(g => g.id === id ? saved : g);
+      }
+    });
+    p.queue = run;
+    return run;
   }
 
   /// Throws on failure (e.g. a bad link) so GameDetail can show the message.
