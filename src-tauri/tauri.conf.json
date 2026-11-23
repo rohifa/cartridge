@@ -22,7 +22,9 @@
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": ["$APPDATA/covers/**"],
+          "allow": [
+            "$APPDATA/covers/**"
+          ],
           "deny": []
         }
       }
@@ -37,6 +39,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "signingIdentity": "-"
+    }
   }
 }
