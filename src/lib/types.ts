@@ -47,6 +47,19 @@ export type SteamMatchAction =
   | { kind: 'reject' }             // "Not this game"
   | { kind: 'auto' };              // forget the manual choice, search again
 
+export type ScorePhase = 'matching' | 'reviews' | 'metacritic';
+
+/// Background score job state (`ScoreProgress` in scores.rs).
+export interface ScoreProgress {
+  running: boolean;
+  phase: ScorePhase | null;
+  done: number;
+  total: number;
+  finishedAt: number | null;    // unix secs of the last finished pass
+  error: string | null;         // plain-language problem from the last pass
+  refreshQueued: boolean;       // "Refresh scores" asked for, not started yet
+}
+
 export type GamePatch = Partial<Omit<Game, 'id' | 'copies'>>;
 
 export interface SyncResult {

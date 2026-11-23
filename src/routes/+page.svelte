@@ -29,6 +29,8 @@
     savePrefs as apiSavePrefs,
     startOAuthFlow,
     startScoreRefresh,
+    refreshScores as apiRefreshScores,
+    getScoreProgress,
     setSteamMatch,
     rejectSteamMatch,
     autoSteamMatch,
@@ -41,6 +43,7 @@
   import type {
     Game, GameList, GamePatch, SidebarFilter, AppView,
     Filters, Prefs, ListColor, ListKind, Account, CartridgeData, Platform, SteamMatchAction,
+    ScoreProgress,
   } from '$lib/types.js';
 
   type SortKey = 'title' | 'playtime' | 'recent' | 'rating' | 'metacritic' | 'userScore' | 'year';
@@ -87,6 +90,7 @@
   let menu              = $state<{ x: number; y: number; items: MenuItem[]; label: string } | null>(null);
   let confirmReq        = $state<ConfirmRequest | null>(null);
   let libraryPath       = $state('');
+  let scoreProgress     = $state<ScoreProgress | null>(null);
   let exporting         = $state(false);
 
   type ConfirmRequest = {
@@ -103,7 +107,14 @@
       const byId = new Map(e.payload.map(g => [g.id, g]));
       games = games.map(g => byId.get(g.id) ?? g);
     });
-    return () => { unlisten.then(f => f()); };
+    const unlistenProgress = listen<ScoreProgress>('scores-progress', (e) => {
+      scoreProgress = e.payload;
+    });
+    getScoreProgress().then(p => { scoreProgress ??= p; }).catch(() => {});
+    return () => {
+      unlisten.then(f => f());
+      unlistenProgress.then(f => f());
+    };
   });
 
   // ── Boot — load persisted state from Rust ─────────────────────────────────
@@ -496,6 +507,7 @@
     {view}
     {filter}
     {listCount}
+    {scoreProgress}
     onNavigate={(v) => { view = v; selectedId = null; }}
     onFilter={(f) => { filter = f; view = 'library'; selectedId = null; }}
     onCreateList={openCreateList}
@@ -511,6 +523,8 @@
         {theme}
         {libraryPath}
         {exporting}
+        {scoreProgress}
+        onRefreshScores={() => apiRefreshScores().catch(e => console.error('refresh_scores failed:', e))}
         onSync={syncOne}
         onSetPref={setPref}
         onTheme={(t) => { theme = t; }}
