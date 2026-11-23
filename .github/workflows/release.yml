@@ -1,0 +1,81 @@
+name: Release
+
+# Push a tag like v0.2.0 (matching the version in package.json,
+# src-tauri/tauri.conf.json and src-tauri/Cargo.toml) to build a universal
+# macOS .dmg and attach it to a draft GitHub release.
+#
+# Without Apple secrets the app is ad-hoc signed (bundle.macOS.signingIdentity
+# "-") and not notarized. To sign and notarize, add these repository secrets:
+# APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD,
+# APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD (app-specific), APPLE_TEAM_ID.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check that the tag matches the app version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(node -p "require('./package.json').version")
+          conf=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          cargo=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)
+          echo "tag $tag · package.json $pkg · tauri.conf.json $conf · Cargo.toml $cargo"
+          [ "$tag" = "$pkg" ] && [ "$tag" = "$conf" ] && [ "$tag" = "$cargo" ]
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # Only pass Apple credentials that exist: an empty APPLE_CERTIFICATE
+      # would make the bundler try (and fail) to import it.
+      - name: Use Apple signing secrets when present
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+                      APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            value="${!name}"
+            if [ -n "$value" ]; then
+              echo "::add-mask::$value"
+              { echo "$name<<__EOF__"; echo "$value"; echo "__EOF__"; } >> "$GITHUB_ENV"
+              echo "$name: set"
+            fi
+          done
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target universal-apple-darwin
+          tagName: ${{ github.ref_name }}
+          releaseName: Cartridge ${{ github.ref_name }}
+          releaseBody: |
+            Universal build for Apple Silicon and Intel Macs.
+
+            This build is not notarized. The first time, open it with right-click → Open (or System Settings → Privacy & Security → Open Anyway).
+          releaseDraft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

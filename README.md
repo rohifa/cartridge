@@ -10,7 +10,7 @@ Cartridge is a desktop app for people whose game library is spread across severa
 
 Everything lives in a single file on your machine. There is no Cartridge account, no cloud sync and no subscription.
 
-> **Status: early (0.1.0).** macOS is the primary target. There are no prebuilt releases yet: you build it from source (see [Getting started](#getting-started)).
+> **Status: early (0.1.0).** macOS is the primary target. Tagged versions are published as a `.dmg` on the [Releases](https://github.com/rohifa/cartridge/releases) page; until the first one is out, build it from source (see [Getting started](#getting-started)).
 
 ## What it does
 
@@ -27,6 +27,12 @@ Everything lives in a single file on your machine. There is no Cartridge account
 - **Launches games** by handing off to the Steam, GOG Galaxy or Epic launcher, which needs to be installed. Settings can ask you to confirm each launch, and sync all accounts when the app opens.
 
 ## Getting started
+
+### Install a release
+
+Download the `.dmg` from [Releases](https://github.com/rohifa/cartridge/releases) and drag Cartridge to Applications. It runs on Apple Silicon and Intel Macs.
+
+The app isn't notarized by Apple yet, so macOS blocks the first launch. Right-click Cartridge in Applications and choose **Open**, or allow it under System Settings → Privacy & Security → **Open Anyway**. You only need to do this once per version.
 
 ### Requirements
 
@@ -97,6 +103,16 @@ cargo clippy                     # lint
 ```
 
 [CLAUDE.md](CLAUDE.md) describes the architecture, the directory layout, how the frontend talks to Rust, and the design conventions. [PLAN.md](PLAN.md) records how the app was built, section by section.
+
+### Releasing a version
+
+1. Set the same version in `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`, and merge that to `main`.
+2. Tag it and push the tag: `git tag v0.2.0 && git push origin v0.2.0`.
+3. The **Release** workflow builds a universal `.dmg` and attaches it to a draft release. A tag with a suffix (`v0.2.0-rc.1`) is marked as a pre-release. Review the draft on GitHub and publish it.
+
+Builds are ad-hoc signed. To sign with a Developer ID and notarize, add the Apple secrets listed at the top of `.github/workflows/release.yml`; the workflow picks them up without other changes.
+
+Pull requests run the **CI** workflow: `pnpm check`, `cargo fmt --check`, `cargo clippy -D warnings` and `cargo test`.
 
 ## License
 
