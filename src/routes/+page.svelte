@@ -38,7 +38,7 @@
     getLibraryPath,
     revealLibrary as apiRevealLibrary,
   } from '$lib/api.js';
-  import { allTags, gameLastPlayed, lastPlayedTs, matchFilters, primaryCopy, totalPlaytime } from '$lib/utils.js';
+  import { allTags, libraryGenres, gameLastPlayed, lastPlayedTs, matchFilters, primaryCopy, totalPlaytime } from '$lib/utils.js';
   import { PLAT, LISTDOT } from '$lib/constants.js';
   import type {
     Game, GameList, GamePatch, SidebarFilter, AppView,
@@ -63,7 +63,6 @@
   let games    = $state<Game[]>([]);
   let lists    = $state<GameList[]>([]);
   let accounts = $state<Account[]>([]);
-  let genres   = $state<string[]>([]);
   let statuses = $state<CartridgeData['statuses']>([]);
   let prefs    = $state<Prefs>({ defaultView: 'grid', showScores: true, confirmLaunch: false, autoSync: false });
 
@@ -124,7 +123,6 @@
       games    = d.games;
       lists    = d.lists;
       accounts = d.accounts;
-      genres   = d.genres;
       statuses = d.statuses;
       prefs    = d.prefs;
       viewMode = d.prefs.defaultView;
@@ -167,6 +165,9 @@
     };
   }
 
+  // Filter options: the genres games actually have (from Steam tags), not the
+  // stored `genres` list, which is an old fixed seed.
+  const genres = $derived(libraryGenres(games));
   const data = $derived<CartridgeData>({ accounts, games, lists, genres, statuses, prefs });
 
   const activeFilterCount = $derived.by(() => {

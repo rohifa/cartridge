@@ -130,3 +130,12 @@ export function allTags(games: Game[]): string[] {
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([t]) => t);
 }
+
+/// Genres present in the library, most used first, then A–Z.
+export function libraryGenres(games: Game[]): string[] {
+  const counts = new Map<string, number>();
+  for (const g of games) for (const x of g.genre) counts.set(x, (counts.get(x) ?? 0) + 1);
+  return [...counts]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([x]) => x);
+}

@@ -3,6 +3,7 @@ use std::sync::Mutex;
 use tauri::Manager;
 
 mod commands;
+mod genres;
 mod models;
 mod store;
 

@@ -23,6 +23,7 @@ Everything lives in a single file on your machine. There is no Cartridge account
 - **Lets you add your own layer:** status (backlog, playing, beaten, dropped, wishlist), a 1–5 star rating, free-form tags (with suggestions from tags you already use), notes, links and custom fields.
 - **Organises games in lists**, either manual or smart (saved filters). Add games to a manual list from the game's page or by right-clicking them in the library. Lists can be deleted from the list header or by right-clicking them in the sidebar.
 - **Shows scores:** Steam user reviews (% positive) and the Metascore, also for games you own only on GOG or Epic (see [Scores](#scores)).
+- **Assigns genres** from Steam's user tags, mapped to a fixed list of specific genres (Metroidvania, Soulslike, Deckbuilder, City builder…). Tags that aren't genres, like "Great Soundtrack" or "Indie", are ignored.
 - **Has grid and list views**, with search, sorting and filters by genre, store, status, release year and minimum score.
 - **Launches games** by handing off to the Steam, GOG Galaxy or Epic launcher, which needs to be installed. Settings can ask you to confirm each launch, and sync all accounts when the app opens.
 
