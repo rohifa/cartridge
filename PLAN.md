@@ -297,3 +297,24 @@ Translating the React prototype in `project/` into Svelte 5 (Runes API) within t
 - [x] **Tags normalised in Rust** too: `norm_tag()` / `clean_tags()` mirror `normTag()`; `patch_game` applies them
 - [x] **Optimistic, ordered edits**: `patch()` in `+page.svelte` applies fields at once, queues `patch_game` calls per game, and lays unanswered fields over server copies (`withPending`), so quick successive tag edits no longer drop each other
 - [x] **Notes debounced**: `GameDetail` keeps a draft and saves 500 ms after typing stops, on blur, on switching game and on leaving the view
+
+---
+
+## Section 17 — Credentials in the Keychain, CSP ✅
+
+> Branch `feat/keychain-csp`.
+
+- [x] **`src-tauri/src/secrets.rs`** — `Secrets` (the credential fields of `Account`), a `Vault` trait, `Keychain` (macOS Keychain via `keyring` 3, `apple-native`), `FakeVault` for tests; `cargo test -- --ignored live_keychain` round-trips a real item
+- [x] **`AppStore`** — release builds: `save` writes changed credentials to the Keychain and strips them from `library.json` (kept in the file for an account whose write failed), deletes removed accounts' items; `load` moves credentials found in the file and reads the rest from the Keychain. A failed read never deletes an item. Debug builds keep credentials in the file and only read the Keychain as a fallback (unit tests)
+- [x] **CSP** — `csp` / `devCsp` in `tauri.conf.json`; `'unsafe-inline'` for styles only, with `dangerousDisableAssetCspModification: ["style-src"]`
+
+---
+
+## Section 18 — CI and releases ✅
+
+> Branch `ci/release`.
+
+- [x] **`.github/workflows/ci.yml`** — on pull requests and `main`: `pnpm check`, `pnpm build`, `cargo fmt --check`, `cargo clippy --all-targets -D warnings`, `cargo test` (macOS runner)
+- [x] **`.github/workflows/release.yml`** — on `v*` tags: checks the tag against the three version fields, builds `--target universal-apple-darwin` with `tauri-action` and attaches the `.dmg` to a draft release (pre-release when the tag has a suffix)
+- [x] **Signing** — ad-hoc (`bundle.macOS.signingIdentity: "-"`); Developer ID signing and notarization turn on when the Apple secrets are added
+- [x] Two `clippy::map_identity` warnings fixed in `sync.rs`

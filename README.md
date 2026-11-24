@@ -10,7 +10,7 @@ Cartridge is a desktop app for people whose game library is spread across severa
 
 Everything lives in a single file on your machine. There is no Cartridge account, no cloud sync and no subscription.
 
-> **Status: early (0.1.0).** macOS is the primary target. There are no prebuilt releases yet: you build it from source (see [Getting started](#getting-started)).
+> **Status: early (0.1.0).** macOS is the primary target. Tagged versions are published as a `.dmg` on the [Releases](https://github.com/rohifa/cartridge/releases) page; until the first one is out, build it from source (see [Getting started](#getting-started)).
 
 ## What it does
 
@@ -27,6 +27,12 @@ Everything lives in a single file on your machine. There is no Cartridge account
 - **Launches games** by handing off to the Steam, GOG Galaxy or Epic launcher, which needs to be installed. Settings can ask you to confirm each launch, and sync all accounts when the app opens.
 
 ## Getting started
+
+### Install a release
+
+Download the `.dmg` from [Releases](https://github.com/rohifa/cartridge/releases) and drag Cartridge to Applications. It runs on Apple Silicon and Intel Macs.
+
+The app isn't notarized by Apple yet, so macOS blocks the first launch. Right-click Cartridge in Applications and choose **Open**, or allow it under System Settings → Privacy & Security → **Open Anyway**. You only need to do this once per version.
 
 ### Requirements
 
@@ -78,7 +84,7 @@ Cartridge fills in two scores, both from Steam's public store data. No API key i
 
 - **Backups:** to back up your library, copy `library.json`; **Reveal in Finder** in Settings → Local data shows it. It's written atomically, so a crash can't leave it half-written. If Cartridge can't read the file when it starts, it moves it aside as `library.corrupt-<time>.json` in the same folder and starts with an empty library, instead of overwriting it.
 - **Export:** **Export JSON** in Settings → Local data saves a copy of your library wherever you choose. Credentials are not included.
-- **Credentials:** your Steam API key and your GOG and Epic sign-in tokens are stored in the same file. They are not encrypted, so anyone who can read your user files can read them. They are never passed to the app's interface.
+- **Credentials:** your Steam API key and your GOG and Epic sign-in tokens are stored in the macOS Keychain (one item per account, named `com.cartridge.app`), not in `library.json`. Libraries from older versions are moved there on first launch. They are never passed to the app's interface. Development builds (`pnpm tauri dev`) keep them in `library.json` instead, so the Keychain doesn't ask for access after every rebuild.
 - **Network:** Cartridge connects only to Steam, GOG and Epic, to import libraries, covers and scores. Fonts and everything else in the interface ship with the app.
 
 ## Not done yet
@@ -97,6 +103,16 @@ cargo clippy                     # lint
 ```
 
 [CLAUDE.md](CLAUDE.md) describes the architecture, the directory layout, how the frontend talks to Rust, and the design conventions. [PLAN.md](PLAN.md) records how the app was built, section by section.
+
+### Releasing a version
+
+1. Set the same version in `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`, and merge that to `main`.
+2. Tag it and push the tag: `git tag v0.2.0 && git push origin v0.2.0`.
+3. The **Release** workflow builds a universal `.dmg` and attaches it to a draft release. A tag with a suffix (`v0.2.0-rc.1`) is marked as a pre-release. Review the draft on GitHub and publish it.
+
+Builds are ad-hoc signed. To sign with a Developer ID and notarize, add the Apple secrets listed at the top of `.github/workflows/release.yml`; the workflow picks them up without other changes.
+
+Pull requests run the **CI** workflow: `pnpm check`, `cargo fmt --check`, `cargo clippy -D warnings` and `cargo test`.
 
 ## License
 

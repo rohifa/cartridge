@@ -87,8 +87,8 @@ mod tests {
             expires_at: Some(0),
             egs_session: Some(SECRETS[3].into()),
         };
-        AppStore {
-            data: CartridgeData {
+        AppStore::with_data(
+            CartridgeData {
                 version: 1,
                 accounts: vec![account],
                 games: vec![],
@@ -97,9 +97,8 @@ mod tests {
                 statuses: vec![],
                 prefs: Prefs::default(),
             },
-            covers_dir: path.with_file_name("covers"),
             path,
-        }
+        )
     }
 
     #[test]

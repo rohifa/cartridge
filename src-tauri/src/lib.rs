@@ -4,6 +4,7 @@ use tauri::Manager;
 
 mod commands;
 mod models;
+mod secrets;
 mod store;
 
 use store::AppStore;
