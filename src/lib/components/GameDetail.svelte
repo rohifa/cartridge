@@ -610,6 +610,8 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+    /* Without this the flex item grows to its content and .body never scrolls. */
+    min-height: 0;
     background: var(--bg-1);
   }
 
@@ -653,6 +655,7 @@
   /* ── Scrollable body ── */
   .body {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
   }
 
