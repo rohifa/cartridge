@@ -1,10 +1,13 @@
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use tauri::{AppHandle, Manager};
 
 use crate::models::{CartridgeData, Game, GamePatch, GameStatus, Prefs, StatusMeta};
+use crate::secrets::{Keychain, Secrets, Vault};
 
 /// Library format written by this build. See `parse_library` for migrations.
 pub const CURRENT_VERSION: u32 = 2;
@@ -71,6 +74,20 @@ pub struct AppStore {
     pub data: CartridgeData,
     pub path: PathBuf,
     pub covers_dir: PathBuf,
+    secrets: SecretStore,
+}
+
+/// Where account credentials are kept on disk (see `secrets.rs`).
+struct SecretStore {
+    /// None: credentials only ever live in `library.json` (tests).
+    vault: Option<Box<dyn Vault>>,
+    /// Debug builds: credentials stay in `library.json`; the vault is only
+    /// read for accounts that have none there.
+    in_file: bool,
+    /// What the vault holds per account, as last written or read.
+    /// `None` = unknown (the read failed): left alone until new credentials
+    /// arrive, so a denied Keychain prompt never deletes anything.
+    known: Mutex<HashMap<String, Option<Secrets>>>,
 }
 
 impl AppStore {
@@ -87,21 +104,132 @@ impl AppStore {
         let covers_dir = app_dir.join("covers");
         std::fs::create_dir_all(&covers_dir).ok();
 
+        Self::open(
+            path,
+            covers_dir,
+            Some(Box::new(Keychain)),
+            cfg!(debug_assertions),
+        )
+    }
+
+    fn open(
+        path: PathBuf,
+        covers_dir: PathBuf,
+        vault: Option<Box<dyn Vault>>,
+        secrets_in_file: bool,
+    ) -> Self {
         let (data, needs_save) = Self::read_library(&path);
 
-        let store = Self {
+        let mut store = Self {
             data,
             path,
             covers_dir,
+            secrets: SecretStore {
+                vault,
+                in_file: secrets_in_file,
+                known: Mutex::new(HashMap::new()),
+            },
         };
+        let move_secrets = store.load_secrets();
 
         // First run: create the file. Migrated: write the new format once
-        // (the original was copied aside by `read_library`).
-        if needs_save {
+        // (the original was copied aside by `read_library`). Credentials
+        // found in the file: move them to the Keychain.
+        if needs_save || move_secrets {
             store.save().ok();
         }
 
         store
+    }
+
+    /// A store over `data` that keeps credentials in the file (tests).
+    #[cfg(test)]
+    pub fn with_data(data: CartridgeData, path: PathBuf) -> Self {
+        Self {
+            data,
+            covers_dir: path.with_file_name("covers"),
+            path,
+            secrets: SecretStore {
+                vault: None,
+                in_file: true,
+                known: Mutex::new(HashMap::new()),
+            },
+        }
+    }
+
+    /// Fills in credentials from the vault for accounts that have none in the
+    /// file. Returns true when the file holds credentials that belong in the
+    /// vault (the next save moves them).
+    fn load_secrets(&mut self) -> bool {
+        let Some(vault) = &self.secrets.vault else {
+            return false;
+        };
+        let mut known = self.secrets.known.lock().unwrap();
+        let mut in_file = false;
+        for a in &mut self.data.accounts {
+            if !Secrets::of(a).is_empty() {
+                in_file = true;
+                continue;
+            }
+            match vault.get(&a.id) {
+                Ok(found) => {
+                    let found = found.unwrap_or_default();
+                    found.fill(a);
+                    known.insert(a.id.clone(), Some(found));
+                }
+                Err(e) => {
+                    eprintln!("[Store] Could not read credentials for {}: {e:#}", a.id);
+                    known.insert(a.id.clone(), None);
+                }
+            }
+        }
+        in_file && !self.secrets.in_file
+    }
+
+    /// Brings the vault in line with the accounts: changed credentials are
+    /// written (when `write`), removed accounts' entries deleted. Returns the
+    /// accounts whose credentials couldn't be written; they stay in the file.
+    fn sync_vault(&self, vault: &dyn Vault, write: bool) -> HashSet<String> {
+        let mut known = self.secrets.known.lock().unwrap();
+        let mut failed = HashSet::new();
+
+        for a in self.data.accounts.iter().filter(|_| write) {
+            let now = Secrets::of(a);
+            match known.get(&a.id) {
+                Some(Some(prev)) if *prev == now => continue,
+                Some(None) if now.is_empty() => continue,
+                _ => {}
+            }
+            let result = if now.is_empty() {
+                vault.delete(&a.id)
+            } else {
+                vault.set(&a.id, &now)
+            };
+            match result {
+                Ok(()) => {
+                    known.insert(a.id.clone(), Some(now));
+                }
+                Err(e) => {
+                    eprintln!("[Store] Could not store credentials for {}: {e:#}", a.id);
+                    failed.insert(a.id.clone());
+                }
+            }
+        }
+
+        let gone: Vec<String> = known
+            .keys()
+            .filter(|id| !self.data.accounts.iter().any(|a| &a.id == *id))
+            .cloned()
+            .collect();
+        for id in gone {
+            match vault.delete(&id) {
+                Ok(()) => {
+                    known.remove(&id);
+                }
+                Err(e) => eprintln!("[Store] Could not delete credentials for {id}: {e:#}"),
+            }
+        }
+        failed
     }
 
     /// Reads the library at `path`. Returns `(data, needs_save)`: true on first
@@ -321,9 +449,28 @@ impl AppStore {
         }
     }
 
+    /// Writes `library.json` atomically. In release builds credentials go to
+    /// the Keychain first and are left out of the file, except for accounts
+    /// whose Keychain write failed.
     pub fn save(&self) -> anyhow::Result<()> {
         let tmp = self.path.with_extension("json.tmp");
-        let json = serde_json::to_string_pretty(&self.data).context("serialise CartridgeData")?;
+        let json = match &self.secrets.vault {
+            Some(vault) if !self.secrets.in_file => {
+                let kept = self.sync_vault(vault.as_ref(), true);
+                let mut data = self.data.clone();
+                for a in data.accounts.iter_mut().filter(|a| !kept.contains(&a.id)) {
+                    Secrets::strip(a);
+                }
+                serde_json::to_string_pretty(&data)
+            }
+            vault => {
+                if let Some(vault) = vault {
+                    self.sync_vault(vault.as_ref(), false);
+                }
+                serde_json::to_string_pretty(&self.data)
+            }
+        }
+        .context("serialise CartridgeData")?;
         std::fs::write(&tmp, json).context("write library.json.tmp")?;
         std::fs::rename(&tmp, &self.path).context("rename tmp → library.json")?;
         Ok(())
@@ -380,15 +527,12 @@ impl AppStore {
         Some(updated)
     }
 
-    /// Returns a clone of CartridgeData with `api_key` stripped from all accounts.
-    /// Always use this when returning data to the frontend.
+    /// Returns a clone of CartridgeData with every credential stripped from
+    /// all accounts. Always use this when returning data to the frontend.
     pub fn sanitized_data(&self) -> CartridgeData {
         let mut data = self.data.clone();
         for account in &mut data.accounts {
-            account.api_key = None;
-            account.access_token = None;
-            account.refresh_token = None;
-            account.egs_session = None;
+            Secrets::strip(account);
         }
         data
     }
@@ -612,11 +756,7 @@ mod tests {
         let game: Game = serde_json::from_value(lib["games"][0].clone()).unwrap();
         let mut data = AppStore::empty_data();
         data.games.push(game);
-        let mut store = AppStore {
-            data,
-            path: dir.join("library.json"),
-            covers_dir: dir.join("covers"),
-        };
+        let mut store = AppStore::with_data(data, dir.join("library.json"));
 
         let patch = GamePatch {
             tags: Some(vec!["Co-op".into(), " co-op ".into(), "Cozy".into()]),
@@ -625,6 +765,186 @@ mod tests {
         let g = store.patch_game(1, patch).unwrap();
         assert_eq!(g.tags, vec!["co-op", "cozy"]);
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // ── Credentials and the vault ──────────────────────────────────────────
+
+    use crate::models::{Account, AccountStatus, Platform};
+    use crate::secrets::testing::FakeVault;
+
+    fn account(id: &str, api_key: Option<&str>) -> Account {
+        Account {
+            id: id.into(),
+            name: "Steam".into(),
+            handle: "someone".into(),
+            platform: Platform::Steam,
+            count: 0,
+            synced: "just now".into(),
+            status: AccountStatus::Ok,
+            api_key: api_key.map(String::from),
+            access_token: None,
+            refresh_token: None,
+            expires_at: None,
+            egs_session: None,
+        }
+    }
+
+    /// Writes a library with these accounts and opens it in "release" mode
+    /// (credentials in the vault).
+    fn open_with(dir: &Path, accounts: Vec<Account>, vault: &FakeVault) -> AppStore {
+        let path = dir.join("library.json");
+        let mut data = AppStore::empty_data();
+        data.accounts = accounts;
+        std::fs::write(&path, serde_json::to_string(&data).unwrap()).unwrap();
+        AppStore::open(
+            path,
+            dir.join("covers"),
+            Some(Box::new(vault.clone())),
+            false,
+        )
+    }
+
+    fn file_has(dir: &Path, needle: &str) -> bool {
+        std::fs::read_to_string(dir.join("library.json"))
+            .unwrap()
+            .contains(needle)
+    }
+
+    #[test]
+    fn credentials_in_the_file_move_to_the_vault() {
+        let dir = temp_dir("vault-move");
+        let vault = FakeVault::default();
+
+        let store = open_with(&dir, vec![account("a", Some("key-a"))], &vault);
+
+        assert_eq!(store.data.accounts[0].api_key.as_deref(), Some("key-a"));
+        assert_eq!(
+            vault.get_now("a").unwrap().api_key.as_deref(),
+            Some("key-a")
+        );
+        assert!(!file_has(&dir, "key-a"), "library.json still holds the key");
+        assert!(file_has(&dir, "someone"), "the account itself is kept");
+
+        // Next launch reads them back from the vault.
+        let again = AppStore::open(
+            dir.join("library.json"),
+            dir.join("covers"),
+            Some(Box::new(vault.clone())),
+            false,
+        );
+        assert_eq!(again.data.accounts[0].api_key.as_deref(), Some("key-a"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn changed_credentials_are_written_on_save() {
+        let dir = temp_dir("vault-change");
+        let vault = FakeVault::default();
+        let mut store = open_with(&dir, vec![account("a", Some("old"))], &vault);
+
+        store.data.accounts[0].api_key = Some("new".into());
+        store.save().unwrap();
+
+        assert_eq!(vault.get_now("a").unwrap().api_key.as_deref(), Some("new"));
+        assert!(!file_has(&dir, "new\""));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn failed_vault_write_keeps_credentials_in_the_file() {
+        let dir = temp_dir("vault-fail");
+        let vault = FakeVault::default();
+        vault.fail(true);
+
+        let store = open_with(&dir, vec![account("a", Some("key-a"))], &vault);
+
+        assert!(file_has(&dir, "key-a"), "credentials must not be lost");
+        vault.fail(false);
+        store.save().unwrap();
+        assert!(!file_has(&dir, "key-a"));
+        assert_eq!(
+            vault.get_now("a").unwrap().api_key.as_deref(),
+            Some("key-a")
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn failed_vault_read_never_deletes_the_entry() {
+        let dir = temp_dir("vault-read");
+        let vault = FakeVault::default();
+        drop(open_with(&dir, vec![account("a", Some("key-a"))], &vault));
+
+        // The Keychain prompt is denied on the next launch.
+        vault.fail(true);
+        let store = AppStore::open(
+            dir.join("library.json"),
+            dir.join("covers"),
+            Some(Box::new(vault.clone())),
+            false,
+        );
+        assert_eq!(store.data.accounts[0].api_key, None);
+        vault.fail(false);
+        store.save().unwrap();
+
+        assert_eq!(
+            vault.get_now("a").unwrap().api_key.as_deref(),
+            Some("key-a")
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn removed_account_is_deleted_from_the_vault() {
+        let dir = temp_dir("vault-remove");
+        let vault = FakeVault::default();
+        let mut store = open_with(
+            &dir,
+            vec![account("a", Some("key-a")), account("b", Some("key-b"))],
+            &vault,
+        );
+
+        store.data.accounts.retain(|a| a.id != "a");
+        store.save().unwrap();
+
+        assert!(vault.get_now("a").is_none());
+        assert!(vault.get_now("b").is_some());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn debug_builds_keep_credentials_in_the_file() {
+        let dir = temp_dir("vault-debug");
+        let vault = FakeVault::default();
+        vault.entries.lock().unwrap().insert(
+            "b".into(),
+            Secrets {
+                api_key: Some("key-b".into()),
+                ..Default::default()
+            },
+        );
+        let path = dir.join("library.json");
+        let mut data = AppStore::empty_data();
+        data.accounts = vec![account("a", Some("key-a")), account("b", None)];
+        std::fs::write(&path, serde_json::to_string(&data).unwrap()).unwrap();
+
+        let store = AppStore::open(
+            path,
+            dir.join("covers"),
+            Some(Box::new(vault.clone())),
+            true,
+        );
+        store.save().unwrap();
+
+        assert!(file_has(&dir, "key-a"));
+        assert!(
+            vault.get_now("a").is_none(),
+            "debug builds don't write the vault"
+        );
+        // An account a release build moved to the vault still works.
+        assert_eq!(store.data.accounts[1].api_key.as_deref(), Some("key-b"));
         std::fs::remove_dir_all(&dir).ok();
     }
 
