@@ -68,6 +68,7 @@ cartridge/
 ├── src-tauri/src/
 │   ├── lib.rs                  # plugin init, AppStore::load, all command registration
 │   ├── main.rs
+│   ├── genres.rs               # Cartridge genre vocabulary + Steam tag ID mapping
 │   ├── models.rs               # Rust structs/enums — serde mirrors of types.ts
 │   ├── store.rs                # AppStore: load (parse_library + migrations), atomic save,
 │   │                           #   patch_game, sanitized_data
@@ -80,7 +81,7 @@ cartridge/
 │       ├── launch.rs           # launch_game (platform deep links, pick_copy), open_url
 │       ├── sync.rs             # add_steam_account, start_oauth_flow, sync_account, remove_account;
 │       │                       #   cross-platform duplicate merging
-│       ├── scores.rs           # Steam reviews + Metacritic, title matching, background score job
+│       ├── scores.rs           # Steam reviews + Metacritic + tags, title matching, background score job
 │       └── fs.rs               # get_library_path (~-abbreviated), reveal_library (no path arg)
 ├── static/
 │   ├── covers/                 # bundled cover art (*.png)
@@ -137,6 +138,15 @@ Per-game scores come from Steam, without API keys. Everything lives in `src-taur
 - **Background job** (`spawn_score_refresh`): runs on app start (`start_score_refresh`, unless auto-sync runs instead) and after every `sync_account`, in three phases: title matching (1 search/s), reviews (batched `GetItems`), Metacritic (1 app per 1.6 s, rechecked every 30 days). It is rate-limit aware, resumable through the `*_checked_at` fields, and emits `games-updated` and `scores-progress`. `refresh_scores` ("Refresh scores" in Settings) makes the next pass ignore the recheck windows.
 - **Matching rules**: prefer no score over a wrong one. When you change the rules in `pick_match` / `strip_edition`, bump `MATCHER_REV` so unmatched games are searched again, and add cases to the unit tests. `cargo test -- --ignored live_` runs a few cases against the real Steam API.
 - **Steam search limits**: every Steam search endpoint only indexes games currently for sale. Delisted games can't be found by title, but `GetItems` still returns their reviews by app ID; for those the user pastes a link.
+
+## Genres
+
+`Game.genre` comes from Steam user tags, mapped to Cartridge's own vocabulary in `src-tauri/src/genres.rs`. Each genre lists the Steam tag IDs that mean it; unlisted tags ("Great Soundtrack", "Indie", "Singleplayer") are ignored. A game gets up to 3 genres in Steam's vote order; the broad ones in `FALLBACK` (Action, Adventure, Strategy…) only when nothing specific matched.
+
+- The tags come with the reviews request (`GetItems`, `include_tag_count`), so genres are recomputed on every score run: table changes apply on the next launch. Games where no tag maps keep what they have.
+- Genres can't be edited in the UI. If that changes, add a manual flag like `steamMatchManual` so the score job stops overwriting them.
+- The Category filter lists the genres games have (`libraryGenres()` in `utils.ts`). The stored `genres` array is an old fixed seed and is no longer shown.
+- Tag IDs: `IStoreService/GetTagList/v1/?language=english`. Keep each tag in one genre; a unit test checks it.
 
 ## Development Commands
 

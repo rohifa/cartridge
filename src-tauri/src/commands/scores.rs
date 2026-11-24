@@ -5,7 +5,8 @@
 //! scores. Everything runs in one paced background job (`spawn_score_refresh`):
 //!
 //!   1. title matching  — `IStoreQueryService/SearchSuggestions`, 1 per game, once
-//!   2. user reviews    — `IStoreBrowseService/GetItems`, batched, every run
+//!   2. user reviews    — `IStoreBrowseService/GetItems`, batched, every run;
+//!      the same request brings the Steam tags that `genres` maps to genres
 //!   3. Metacritic      — `store/api/appdetails`, 1 per game, every 30 days
 //!
 //! None of these need an API key. (`store.steampowered.com/appreviews` now
@@ -20,6 +21,7 @@ use std::time::Duration;
 use anyhow::Context;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::genres;
 use crate::models::{Game, Platform, SteamMatch};
 use crate::store::AppStore;
 
@@ -477,6 +479,14 @@ struct StoreItem {
     #[serde(default)]
     name: String,
     reviews: Option<Reviews>,
+    #[serde(default)]
+    tags: Vec<ItemTag>,
+}
+#[derive(serde::Deserialize)]
+struct ItemTag {
+    tagid: u32,
+    #[serde(default)]
+    weight: u32,
 }
 #[derive(serde::Deserialize)]
 struct Reviews {
@@ -508,6 +518,13 @@ impl StoreItem {
             count: s.map_or(0, |s| s.review_count),
         }
     }
+
+    /// Tag IDs, most voted first.
+    fn tag_ids(&self) -> Vec<u32> {
+        let mut tags: Vec<&ItemTag> = self.tags.iter().collect();
+        tags.sort_by_key(|t| std::cmp::Reverse(t.weight));
+        tags.iter().map(|t| t.tagid).collect()
+    }
 }
 
 /// One GetItems request (≤ `BATCH` apps). Only apps Steam knows are returned.
@@ -515,7 +532,7 @@ async fn get_items(client: &reqwest::Client, appids: &[u64]) -> anyhow::Result<V
     let input = serde_json::json!({
         "ids": appids.iter().map(|a| serde_json::json!({ "appid": a })).collect::<Vec<_>>(),
         "context": { "language": "english", "country_code": "US" },
-        "data_request": { "include_reviews": true },
+        "data_request": { "include_reviews": true, "include_tag_count": genres::TAG_COUNT },
     });
     let resp: ItemsResponse = client
         .get(GET_ITEMS_URL)
@@ -535,19 +552,21 @@ async fn get_items(client: &reqwest::Client, appids: &[u64]) -> anyhow::Result<V
         .collect())
 }
 
-/// Fetch review summaries for `appids`. Apps Steam doesn't know are left out;
-/// known apps without reviews come back with `count == 0`.
-async fn fetch_steam_reviews(
+/// Fetch review summaries and tag IDs for `appids`. Apps Steam doesn't know
+/// are left out; known apps without reviews come back with `count == 0`.
+async fn fetch_steam_items(
     client: &reqwest::Client,
     appids: &[u64],
-) -> anyhow::Result<HashMap<u64, SteamReviews>> {
-    let mut out = HashMap::new();
+) -> anyhow::Result<(HashMap<u64, SteamReviews>, HashMap<u64, Vec<u32>>)> {
+    let mut reviews = HashMap::new();
+    let mut tags = HashMap::new();
     for chunk in appids.chunks(BATCH) {
         for item in get_items(client, chunk).await? {
-            out.insert(item.id, item.reviews());
+            reviews.insert(item.id, item.reviews());
+            tags.insert(item.id, item.tag_ids());
         }
     }
-    Ok(out)
+    Ok((reviews, tags))
 }
 
 /// Write Steam review scores into `user_score` / `user_score_reviews`.
@@ -577,7 +596,28 @@ pub(crate) fn apply_steam_reviews(
     changed
 }
 
-/// Refresh Steam review scores for every game with a Steam app (owned or
+/// Write genres mapped from Steam tags (see `genres`) into `genre`. Uses the
+/// first Steam app (owned copy, then title match) whose tags map to anything;
+/// games where nothing maps keep what they have. Returns the changed IDs.
+pub(crate) fn apply_steam_genres(games: &mut [Game], tags: &HashMap<u64, Vec<u32>>) -> Vec<u64> {
+    let mut changed = Vec::new();
+    for g in games {
+        let found = steam_appids(g)
+            .iter()
+            .filter_map(|id| tags.get(id))
+            .map(|t| genres::from_steam_tags(t))
+            .find(|found| !found.is_empty());
+        if let Some(found) = found {
+            if g.genre != found {
+                g.genre = found;
+                changed.push(g.id);
+            }
+        }
+    }
+    changed
+}
+
+/// Refresh Steam review scores and genres for every game with a Steam app (owned or
 /// matched). A few batched requests; never holds the lock across a request.
 /// Returns the updated games.
 pub(crate) async fn refresh_steam_reviews(
@@ -599,10 +639,15 @@ pub(crate) async fn refresh_steam_reviews(
         return Ok(vec![]);
     }
 
-    let reviews = fetch_steam_reviews(client, &appids).await?;
+    let (reviews, tags) = fetch_steam_items(client, &appids).await?;
 
     let mut store = store.lock().unwrap();
-    let changed = apply_steam_reviews(&mut store.data.games, &reviews);
+    let mut changed = apply_steam_reviews(&mut store.data.games, &reviews);
+    for id in apply_steam_genres(&mut store.data.games, &tags) {
+        if !changed.contains(&id) {
+            changed.push(id);
+        }
+    }
     if changed.is_empty() {
         return Ok(vec![]);
     }
@@ -1553,6 +1598,51 @@ mod tests {
         assert_eq!(games[1].user_score_reviews, None);
     }
 
+    // ── Genres ──
+
+    #[test]
+    fn reads_tags_most_voted_first() {
+        let item: StoreItem = serde_json::from_value(serde_json::json!({
+            "id": 367520, "success": 1,
+            "tags": [{"tagid": 1625, "weight": 700}, {"tagid": 1628, "weight": 935}]
+        }))
+        .unwrap();
+        assert_eq!(item.tag_ids(), [1628, 1625]);
+        let bare: StoreItem = serde_json::from_value(serde_json::json!({"id": 1})).unwrap();
+        assert!(bare.tag_ids().is_empty());
+    }
+
+    #[test]
+    fn genres_come_from_the_first_app_whose_tags_map() {
+        let mut steam = game(&[(Platform::Steam, "367520")]);
+        steam.id = 1;
+        let mut matched = game(&[(Platform::Gog, "1")]);
+        matched.id = 2;
+        matched.steam_match = Some(SteamMatch {
+            appid: 1145360,
+            name: "Hades".into(),
+        });
+        let mut noise = game(&[(Platform::Steam, "10")]);
+        noise.id = 3;
+        noise.genre = vec!["Puzzle".into()];
+        let mut games = vec![steam, matched, noise];
+        let tags = HashMap::from([
+            (367520, vec![1628, 1625, 1756]),
+            (1145360, vec![42804, 1646]),
+            (10, vec![1756, 4182]),
+        ]);
+
+        assert_eq!(apply_steam_genres(&mut games, &tags), [1, 2]);
+        assert_eq!(games[0].genre, ["Metroidvania", "Platformer"]);
+        assert_eq!(games[1].genre, ["Roguelite", "Hack and slash"]);
+        assert_eq!(
+            games[2].genre,
+            ["Puzzle"],
+            "nothing mapped: keep what it has"
+        );
+        assert!(apply_steam_genres(&mut games, &tags).is_empty());
+    }
+
     // ── Metacritic ──
 
     #[test]
@@ -1608,12 +1698,17 @@ mod tests {
     #[ignore]
     async fn live_fetch_parses_real_response() {
         let client = reqwest::Client::new();
-        let r = fetch_steam_reviews(&client, &[620, 999_999_999])
+        let (r, tags) = fetch_steam_items(&client, &[620, 999_999_999])
             .await
             .unwrap();
         let portal = r.get(&620).expect("Portal 2 present");
         assert!(portal.count > 100_000 && (90..=100).contains(&portal.percent));
         assert!(!r.contains_key(&999_999_999));
+        let genres = crate::genres::from_steam_tags(&tags[&620]);
+        assert!(
+            genres.iter().any(|g| g == "Puzzle"),
+            "Portal 2 genres: {genres:?}"
+        );
     }
 
     #[tokio::test]
